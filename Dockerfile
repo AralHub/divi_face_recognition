@@ -1,6 +1,5 @@
 FROM python:3.11
 
-
 RUN mkdir "/face_recogntion"
 
 WORKDIR /face_recogntion

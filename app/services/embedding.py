@@ -59,7 +59,6 @@ def get_faces_data(faces):
     return max(faces, key=lambda face: calculate_rectangle_area(face["bbox"]))
 
 
-
 def calculate_rectangle_area(bbox):
     """Вычисляет площадь прямоугольника."""
     if len(bbox) != 4:
