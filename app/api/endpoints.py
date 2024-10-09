@@ -40,7 +40,11 @@ async def add_face(file: UploadFile = File(...), database: str = Form(...), pers
     if face_data is None:
         raise HTTPException(status_code=401, detail="No face detected in the image")
 
-        # Генерируем уникальное имя файла
+    score, person_id = face_recognition.search_face(face_data, database)
+    if score > 99:
+        return {"message": "face already exists", "score": score, 'id': person_id}
+
+    # Генерируем уникальное имя файла
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_extension = os.path.splitext(file.filename)[1]
     image_filename = f"{person_id}_{timestamp}{file_extension}"
@@ -55,7 +59,9 @@ async def add_face(file: UploadFile = File(...), database: str = Form(...), pers
     # Сохраняем изображение
     with open(file_path, "wb") as image_file:
         image_file.write(contents)
-
+    score, person_id = face_recognition.search_face(face_data, database)
+    if score > 99:
+        return {"message": "face already exists", "score": score, 'id': person_id}
     image_id = db.add_new_face_to_collection(face_data, file_path, person_id, database)
 
     image_url = f"/uploads/{database}/{image_filename}"

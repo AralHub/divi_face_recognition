@@ -17,7 +17,7 @@ class FaceRecognition:
             #print(existing_faces)
             for doc in existing_faces:
                 embedding = np.array(doc['embedding'], dtype=np.float32)
-                self._indices[collection].append(doc['_id'])
+                self._indices[collection].append(doc['person_id'])
                 vectors = np.array([embedding]).astype('float32')
                 if vectors.ndim != 2:
                     raise ValueError("Vectors should be a 2D array")
@@ -37,6 +37,7 @@ class FaceRecognition:
         return abs(round(scores[0][0] * 100, 3)), person_id
 
 
+
     def add_to_index(self, embedding, db_name, face_id):
         vectors = np.array([embedding]).astype('float32')
         faiss.normalize_L2(vectors)
@@ -53,7 +54,7 @@ class FaceRecognition:
         embeddings = []
         for doc in existing_faces:
             embeddings.append(np.array(doc['embedding'], dtype=np.float32))
-            self._indices[collection_name] = [doc['_id']]
+            self._indices[collection_name] = [doc['person_id']]
         vectors = np.array(embeddings).astype('float32')
         if vectors.ndim != 2:
             raise ValueError("Vectors should be a 2D array")
