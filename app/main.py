@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
@@ -6,6 +8,7 @@ from app.config import settings
 from app.services.face_recognition import face_recognition
 
 app = FastAPI()
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 # Монтируем директорию с загруженными файлами как статические файлы
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
