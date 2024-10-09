@@ -9,11 +9,11 @@ services:
       - .env
     networks:
       - mongodb_network
-#    deploy:
-#      resources:
-#        limits:
-#          cpus: '8.0'
-#          memory: 1400M
+    deploy:
+      resources:
+        limits:
+          cpus: '3.2'
+          memory: 3000M
     ports:
       - "3333:8000"
 
