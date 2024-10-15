@@ -1,7 +1,6 @@
 from datetime import datetime
 
 from pymongo import MongoClient
-from sympy.physics.units import percent
 
 from app.config import settings
 from app.services.embedding import model
@@ -65,5 +64,18 @@ class Database:
 
     def get_collections_names(self):
         return [doc['name'] for doc in self._collections.find()]
+
+    def delete_collection(self, collection_name):
+        if self._collections.find({'name': collection_name}):
+            self._collections.delete_one({'name': collection_name})
+            self.counters.delete_one({'_id': collection_name})
+            self._db[collection_name].delete_many({})
+
+    def delete_face(self, collection_name, face_id):
+        if self._collections.find({'name': collection_name}):
+            self._db[collection_name].delete_one({'_id': face_id})
+
+
+
 
 db = Database()

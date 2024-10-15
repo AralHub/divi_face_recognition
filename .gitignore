@@ -4,3 +4,4 @@ images
 /app/models/models
 .env
 data
+/keys/
