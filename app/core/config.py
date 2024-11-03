@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     MEDIA_URL: str
     COLLECTIONS: str
     MODEL_NAME: str = "buffalo_l"
-    WORKER_POOL_SIZE: int = 4
+    WORKER_POOL_SIZE: int = 1
 
     class Config:
         env_file = ".env"

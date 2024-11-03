@@ -34,9 +34,7 @@ async def recognize_face(file: UploadFile = File(...), database: str = Form(...)
 
 @router.post("/add")
 async def add_face(
-        file: UploadFile = File(...),
-        database: str = Form(...),
-        person_id: int = Form(...)
+    file: UploadFile = File(...), database: str = Form(...), person_id: int = Form(...)
 ):
     contents = await file.read()
 
@@ -72,13 +70,14 @@ async def add_face(
         "metadata": metadata,
     }
 
-@router.post('/delete_person')
+
+@router.post("/delete_person")
 async def delete_person(database: str = Form(...), person_id: int = Form(...)):
     if database not in await db.get_collections_names():
         raise HTTPException(status_code=400, detail="Invalid database")
 
     # Удаление из базы данных
-    result = await db.delete_face(database, person_id)
+    result = await db.delete_person(database, person_id)
     if not result:
         raise HTTPException(status_code=404, detail="Person not found")
 

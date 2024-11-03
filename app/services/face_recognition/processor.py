@@ -46,6 +46,7 @@ class AsyncFaceProcessor:
             "age": int(face.age),
             "gender": "Male" if face.gender == 1 else "Female",
             "pose": face.pose.tolist(),
+            "det_score": face.det_score,
         }
 
 

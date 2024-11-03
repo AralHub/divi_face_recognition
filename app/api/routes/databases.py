@@ -36,12 +36,14 @@ async def get_faces(database: str):
     results = []
     try:
         async for doc in db.get_docs_from_collection(database):
-            results.append(FaceInfo(
-                face_id=str(doc["_id"]),
-                person_id=doc["person_id"],
-                image_path=doc["image_path"],
-                metadata=doc.get("metadata")
-            ))
+            results.append(
+                FaceInfo(
+                    face_id=str(doc["_id"]),
+                    person_id=doc["person_id"],
+                    image_path=doc["image_url"],
+                    metadata=doc.get("metadata"),
+                )
+            )
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting faces: {str(e)}")

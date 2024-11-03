@@ -10,11 +10,25 @@ from api.routes.face_recognition import router as face_recognition_router
 from core.config import settings
 from services.face_recognition.matcher import matcher
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("Starting up application...")
+    await matcher.initialize()
+    yield
+    print("Shutting down application...")
+
+
+# Create FastAPI app with lifespan
+app = FastAPI(lifespan=lifespan)
+
+# Create upload directory
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-# Монтируем директорию с загруженными файлами как статические файлы
+
+# Mount static files directory
 app.mount("/media", StaticFiles(directory=settings.UPLOAD_DIR), name="media")
 
+# Include routers
 app.include_router(database_router)
 app.include_router(face_recognition_router)
 
@@ -22,12 +36,6 @@ app.include_router(face_recognition_router)
 @app.get("/")
 def read_root():
     return {"message": "Hello, World!"}
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await matcher.initialize()
-    yield
 
 
 if __name__ == "__main__":

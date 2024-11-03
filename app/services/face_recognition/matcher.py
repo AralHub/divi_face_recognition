@@ -21,10 +21,10 @@ class AsyncFaceMatcher:
         try:
             collections = await db.get_collections_names()
             initialization_tasks = [
-                self.create_index(collection)
-                for collection in collections
+                self.create_index(collection) for collection in collections
             ]
             await asyncio.gather(*initialization_tasks)
+            print(f"Initialization tasks for collection {collections}")
         except Exception as e:
             print(f"Initialization error: {e}")
             raise
@@ -127,8 +127,7 @@ class AsyncFaceMatcher:
 
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(
-                    self.executor,
-                    lambda: current_index.add(vectors)
+                    self.executor, lambda: current_index.add(vectors)
                 )
 
                 current_id_map.append(person_id)
@@ -152,8 +151,7 @@ class AsyncFaceMatcher:
 
                 loop = asyncio.get_event_loop()
                 scores, indices = await loop.run_in_executor(
-                    self.executor,
-                    lambda: current_index.search(query, 1)
+                    self.executor, lambda: current_index.search(query, 1)
                 )
 
                 if len(indices[0]) == 0:
@@ -164,6 +162,7 @@ class AsyncFaceMatcher:
         except Exception as e:
             print(f"Search error: {e}")
             return 0.0, 0
+
 
 # Создание синглтона
 matcher = AsyncFaceMatcher()
