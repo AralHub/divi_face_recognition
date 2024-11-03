@@ -34,11 +34,10 @@ async def recognize_face(file: UploadFile = File(...), database: str = Form(...)
 
 @router.post("/add")
 async def add_face(
-    file: UploadFile = File(...), database: str = Form(...), person_id: int = Form(...)
+        file: UploadFile = File(...),
+        database: str = Form(...),
+        person_id: int = Form(...)
 ):
-    # if database not in await db.get_collections_names():
-    #     raise HTTPException(status_code=400, detail="Invalid database")
-
     contents = await file.read()
 
     # Обработка изображения
@@ -49,7 +48,7 @@ async def add_face(
     embedding, metadata = face_data
 
     # Сохранение файла
-    filepath = await storage.save_file(contents, database, person_id)
+    filepath, image_url = await storage.save_file(contents, database, person_id)
 
     # Добавление в базу данных
     face_doc = {
@@ -57,16 +56,33 @@ async def add_face(
         "embedding": embedding.tolist(),
         "metadata": metadata,
         "image_path": filepath,
+        "image_url": image_url,  # Store the URL in the database
     }
 
     face_id = await db.add_face_to_collection(database, face_doc)
 
-    # Добавление в индекс
+    # Add to index
     await matcher.add_face(database, embedding, person_id)
 
     return {
-        "face_id": face_id,
+        "face_id": str(face_id),
         "image_path": filepath,
+        "image_url": image_url,  # Return URL in response
         "person_id": person_id,
         "metadata": metadata,
     }
+
+@router.post('/delete_person')
+async def delete_person(database: str = Form(...), person_id: int = Form(...)):
+    if database not in await db.get_collections_names():
+        raise HTTPException(status_code=400, detail="Invalid database")
+
+    # Удаление из базы данных
+    result = await db.delete_face(database, person_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Person not found")
+
+    # Удаление из индекса
+    await matcher.delete_face(database, person_id)
+
+    return {"message": f"Person with ID {person_id} deleted successfully"}

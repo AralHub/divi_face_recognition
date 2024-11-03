@@ -44,7 +44,7 @@ class AsyncFaceProcessor:
 
         return face.embedding, {
             "age": int(face.age),
-            "gender": "M" if face.gender == 1 else "F",
+            "gender": "Male" if face.gender == 1 else "Female",
             "pose": face.pose.tolist(),
         }
 

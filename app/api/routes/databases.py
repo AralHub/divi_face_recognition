@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException
 
-from app.services.database.mongodb import db
-from app.services.face_recognition.matcher import matcher
+from models.face import FaceInfo
+from services.database.mongodb import db
+from services.face_recognition.matcher import matcher
 
 router = APIRouter(tags=["database"])
 
@@ -19,19 +20,28 @@ async def delete_database(database: str):
     if database not in collections_names:
         raise HTTPException(status_code=404, detail="database not found")
 
-    matcher.delete_index(database)
-    await db.delete_collection(name=database)
+    matcher.delete_collection_index(database)
+    await db.delete_collection(database)
     return {"message": f"Database {database} deleted successfully"}
 
 
-@router.get("/update_indexes")
-async def update_index():
-    matcher.update_index()
+@router.post("/update_indexes")
+async def update_index(database: str):
+    matcher.update_collection_index(database)
     return {"message": "Indexes updated successfully"}
 
 
 @router.get("/get_faces")
 async def get_faces(database: str):
-    docs = await db.get_docs_from_collection(database)
-    results = [(doc["person_id"], doc["image_path"]) for doc in docs]
-    return results
+    results = []
+    try:
+        async for doc in db.get_docs_from_collection(database):
+            results.append(FaceInfo(
+                face_id=str(doc["_id"]),
+                person_id=doc["person_id"],
+                image_path=doc["image_path"],
+                metadata=doc.get("metadata")
+            ))
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting faces: {str(e)}")

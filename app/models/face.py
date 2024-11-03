@@ -3,11 +3,14 @@ from typing import List
 from pydantic import BaseModel
 
 
-class FaceMetadata(BaseModel):
-    embedding: str
+class FaceMeta(BaseModel):
     age: int
     gender: str
     pose: List[float]
+
+
+class FaceMetadata(FaceMeta):
+    embedding: str
 
 
 class FaceEmbedding(BaseModel):
@@ -15,6 +18,11 @@ class FaceEmbedding(BaseModel):
     person_id: int
     image_path: str
 
+class FaceInfo(BaseModel):
+    face_id: str
+    person_id: int
+    image_path: str
+    metadata: FaceMeta
 
 class FaceSearchResult(BaseModel):
     person_id: int
