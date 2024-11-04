@@ -1,4 +1,4 @@
-from fastapi import APIRouter, File, UploadFile, Form, HTTPException
+from fastapi import APIRouter, File, UploadFile, Form, HTTPException, status
 
 from services.database.mongodb import db
 from services.face_recognition.matcher import matcher
@@ -8,7 +8,7 @@ from services.file_storage.async_storage import storage
 router = APIRouter(prefix="/face", tags=["face_recognition"])
 
 
-@router.post("/recognize")
+@router.post("/recognize", status_code=status.HTTP_200_OK)
 async def recognize_face(file: UploadFile = File(...), database: str = Form(...)):
     if database not in await db.get_collections_names():
         raise HTTPException(status_code=400, detail="Invalid database")
@@ -32,7 +32,7 @@ async def recognize_face(file: UploadFile = File(...), database: str = Form(...)
     }
 
 
-@router.post("/add")
+@router.post("/add", status_code=status.HTTP_201_CREATED)
 async def add_face(
     file: UploadFile = File(...), database: str = Form(...), person_id: int = Form(...)
 ):
@@ -71,7 +71,31 @@ async def add_face(
     }
 
 
-@router.post("/delete_person")
+@router.post(
+    "/get_background_image",
+)
+async def get_background_image(
+    background_image: UploadFile = File(...), snap_image: UploadFile = File(...)
+):
+    if background_image.filename is None or snap_image.filename is None:
+        raise HTTPException(
+            status_code=400, detail="No background or snap image provided"
+        )
+
+    # Обработка изображений
+    background_contents = await background_image.read()
+    snap_contents = await snap_image.read()
+
+    data = await processor.background_image(
+        snap_contents, background_contents, background_image.filename
+    )
+    return {
+        "background_image_path": data["background_image_path"],
+        "background_image_url": data["background_image_url"],
+    }
+
+
+@router.post("/delete_person", status_code=status.HTTP_200_OK)
 async def delete_person(database: str = Form(...), person_id: int = Form(...)):
     if database not in await db.get_collections_names():
         raise HTTPException(status_code=400, detail="Invalid database")
@@ -85,3 +109,18 @@ async def delete_person(database: str = Form(...), person_id: int = Form(...)):
     await matcher.delete_face(database, person_id)
 
     return {"message": f"Person with ID {person_id} deleted successfully"}
+
+
+@router.delete("/delete_image", status_code=status.HTTP_200_OK)
+async def delete_image(database: str = Form(...), image_url: str = Form()):
+    if database not in await db.get_collections_names():
+        raise HTTPException(status_code=400, detail="Invalid database")
+    image_data = await db.get_image_by_url(database, image_url)
+    if image_data is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    await storage.delete_file(image_data.get("image_path"))
+    result = await db.delete_image_by_url(database, image_url)
+    if not result:
+        raise HTTPException(status_code=404, detail="Image not found")
+    await matcher.update_collection_index(database)
+    return {"message": f"Image with URL {image_url} deleted successfully"}

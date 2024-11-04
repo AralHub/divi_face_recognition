@@ -19,7 +19,9 @@ class AsyncMongoDB:
         async for doc in self.db[collection].find():
             yield doc
 
-    async def add_face_to_collection(self, collection: str, face_data: dict) -> ObjectId:
+    async def add_face_to_collection(
+        self, collection: str, face_data: dict
+    ) -> ObjectId:
         result = await self.db[collection].insert_one(face_data)
         return result.inserted_id
 
@@ -35,6 +37,13 @@ class AsyncMongoDB:
         result = await self.db.drop_collection(collection)
         return True
 
+    async def delete_image_by_url(self, collection: str, url: str) -> bool:
+        result = await self.db[collection].delete_many({"image_url": url})
+        return result.deleted_count > 0
+
+    async def get_image_by_url(self, collection: str, url: str):
+        face = await self.db[collection].find_one({"image_url": url})
+        return face
 
 
 db = AsyncMongoDB()

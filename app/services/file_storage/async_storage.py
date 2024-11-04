@@ -38,6 +38,7 @@ class AsyncFileStorage:
 
         return filepath, full_url
 
+    @staticmethod
     async def delete_file(self, filepath: str) -> bool:
         try:
             if os.path.exists(filepath):

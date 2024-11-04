@@ -30,33 +30,89 @@ class AsyncFaceMatcher:
             raise
 
     async def create_index(self, collection: str):
+        """Create a new index for the collection with logging and validation"""
+
         if collection in self.indexes:
             return
 
         temp_index = faiss.IndexFlatIP(self.dimension)
         temp_id_map = []
 
+        # Счетчик для отладки
+        face_count = 0
+
         async for face in db.get_docs_from_collection(collection):
-            vectors = np.array([face["embedding"]]).astype("float32")
-            faiss.normalize_L2(vectors)
-            temp_index.add(vectors)
-            temp_id_map.append(face["person_id"])
+            try:
+                embedding = face.get("embedding")
+                person_id = face.get("person_id")
+
+                if embedding is None or person_id is None:
+                    continue
+
+                vectors = np.array([embedding]).astype("float32")
+
+                # Проверка размерности
+                if vectors.shape[1] != self.dimension:
+                    continue
+
+                faiss.normalize_L2(vectors)
+                temp_index.add(vectors)
+                temp_id_map.append(person_id)
+                face_count += 1
+
+            except Exception as e:
+                continue
 
         async with self.lock:
+            # Проверяем, что индексы соответствуют друг другу
+            if temp_index.ntotal != len(temp_id_map):
+                return
+
             self.indexes[collection] = temp_index
             self.id_maps[collection] = temp_id_map
 
     async def delete_collection_index(self, collection: str):
-        """Удаляет индекс и маппинг для указанной коллекции"""
+        """Delete index and mapping for the specified collection with validation"""
+
         async with self.lock:
             if collection in self.indexes:
+                # Очищаем память явно
+                self.indexes[collection].reset()
                 del self.indexes[collection]
                 del self.id_maps[collection]
 
     async def update_collection_index(self, collection: str):
-        """Полное обновление индекса для коллекции"""
-        await self.delete_collection_index(collection)
-        await self.create_index(collection)
+        """Full index update for collection with validation"""
+
+        # Сохраняем старые данные временно
+        old_index = self.indexes.get(collection)
+        old_map = self.id_maps.get(collection)
+
+        try:
+            await self.delete_collection_index(collection)
+            await self.create_index(collection)
+
+            # Проверяем, что обновление прошло успешно
+            if collection not in self.indexes:
+                raise Exception("Failed to create new index")
+
+        except Exception as e:
+            # Восстанавливаем старые данные в случае ошибки
+            if old_index is not None and old_map is not None:
+                self.indexes[collection] = old_index
+                self.id_maps[collection] = old_map
+            raise
+
+    async def get_index_stats(self, collection: str) -> Dict:
+        """Get current index statistics for debugging"""
+        if collection not in self.indexes:
+            return {"error": "Index not found"}
+
+        return {
+            "total_vectors": self.indexes[collection].ntotal,
+            "id_map_length": len(self.id_maps[collection]),
+            "dimension": self.dimension,
+        }
 
     async def partial_update_index(self, collection: str, person_ids: List[int]):
         """Частичное обновление индекса только для указанных person_ids"""

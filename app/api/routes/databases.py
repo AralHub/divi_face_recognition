@@ -27,8 +27,18 @@ async def delete_database(database: str):
 
 @router.post("/update_indexes")
 async def update_index(database: str):
-    matcher.update_collection_index(database)
+    await matcher.update_collection_index(database)
     return {"message": "Indexes updated successfully"}
+
+
+@router.get("/get_stats{database}")
+async def get_stats(database: str):
+    try:
+        # total_faces = await db.get_docs_from_collection(database)
+        stats = await matcher.get_index_stats(database)
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting stats: {str(e)}")
 
 
 @router.get("/get_faces")
