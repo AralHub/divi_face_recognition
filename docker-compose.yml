@@ -20,3 +20,4 @@ services:
 networks:
   mongodb_network:
     external: true
+
