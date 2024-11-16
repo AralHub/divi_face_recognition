@@ -10,19 +10,21 @@ router = APIRouter(prefix="/face", tags=["face_recognition"])
 
 @router.post("/recognize", status_code=status.HTTP_200_OK)
 async def recognize_face(file: UploadFile = File(...), database: str = Form(...)):
-    if database not in await db.get_collections_names():
-        raise HTTPException(status_code=400, detail="Invalid database")
 
     contents = await file.read()
-
-    # Обработка изображения
     face_data = await processor.process_image(contents)
     if face_data is None:
         raise HTTPException(status_code=400, detail="No face detected")
 
     embedding, metadata = face_data
 
-    # Поиск совпадений
+    if database not in await db.get_collections_names():
+        return {
+            "person_id": 0,
+            "similarity": 0,
+            "metadata": metadata,
+        }
+
     score, person_id = await matcher.search(database, embedding)
 
     return {
