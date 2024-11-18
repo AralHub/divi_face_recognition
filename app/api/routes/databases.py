@@ -1,5 +1,8 @@
+from urllib.parse import urljoin
+
 from fastapi import APIRouter, HTTPException
 
+from core.config import settings
 from models.face import FaceInfo
 from services.database.mongodb import db
 from services.face_recognition.matcher import matcher
@@ -50,7 +53,7 @@ async def get_faces(database: str):
                 FaceInfo(
                     face_id=str(doc["_id"]),
                     person_id=doc["person_id"],
-                    image_path=doc["image_url"],
+                    image_path=urljoin(settings.MEDIA_URL, doc["image_url"]),
                     metadata=doc.get("metadata"),
                 )
             )

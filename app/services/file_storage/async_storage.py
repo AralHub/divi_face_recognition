@@ -8,9 +8,8 @@ from core.config import settings
 
 
 class AsyncFileStorage:
-    def __init__(self, base_dir: str, base_url: str):
+    def __init__(self, base_dir: str):
         self.base_dir = base_dir
-        self.base_url = base_url.rstrip("/")  # Remove trailing slash if present
 
     async def save_file(
         self, file_data: bytes, collection: str, person_id: int
@@ -29,14 +28,13 @@ class AsyncFileStorage:
 
         # Create URL path
         url_path = rel_path.replace(os.path.sep, "/")  # Ensure forward slashes for URLs
-        full_url = urljoin(f"{self.base_url}/", url_path)
 
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
         async with aiofiles.open(filepath, "wb") as f:
             await f.write(file_data)
 
-        return filepath, full_url
+        return filepath, url_path
 
     @staticmethod
     async def delete_file(self, filepath: str) -> bool:
@@ -48,4 +46,4 @@ class AsyncFileStorage:
             return False
 
 
-storage = AsyncFileStorage(settings.UPLOAD_DIR, settings.MEDIA_URL)
+storage = AsyncFileStorage(settings.UPLOAD_DIR)

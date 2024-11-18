@@ -1,5 +1,8 @@
+from urllib.parse import urljoin
+
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException, status
 
+from core.config import settings
 from services.database.mongodb import db
 from services.face_recognition.matcher import matcher
 from services.face_recognition.processor import processor
@@ -40,7 +43,6 @@ async def add_face(
 ):
     contents = await file.read()
 
-    # Обработка изображения
     face_data = await processor.process_image(contents)
     if face_data is None:
         raise HTTPException(status_code=400, detail="No face detected")
@@ -67,7 +69,9 @@ async def add_face(
     return {
         "face_id": str(face_id),
         "image_path": filepath,
-        "image_url": image_url,  # Return URL in response
+        "image_url": urljoin(
+            f"{settings.MEDIA_URL}/", image_url
+        ),  # Return URL in response
         "person_id": person_id,
         "metadata": metadata,
     }
