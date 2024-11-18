@@ -23,7 +23,7 @@ async def delete_database(database: str):
     if database not in collections_names:
         raise HTTPException(status_code=404, detail="database not found")
 
-    matcher.delete_collection_index(database)
+    await matcher.delete_collection_index(database)
     await db.delete_collection(database)
     return {"message": f"Database {database} deleted successfully"}
 
