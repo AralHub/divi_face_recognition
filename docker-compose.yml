@@ -12,10 +12,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '3.2'
+          cpus: '3.0'
           memory: 3000M
     ports:
       - "3333:8000"
+
 
 networks:
   mongodb_network:
