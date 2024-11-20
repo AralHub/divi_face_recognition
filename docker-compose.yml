@@ -15,7 +15,7 @@ services:
           cpus: '3.0'
           memory: 3000M
     ports:
-      - "3333:8000"
+      - "127.0.0.1:3333:8000"
 
 
 networks:
