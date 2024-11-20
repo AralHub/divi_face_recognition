@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from api.routes.databases import router as database_router
 from api.routes.face_recognition import router as face_recognition_router
+from api.routes.save_to_db import router as save_to_db_router
 from core.config import settings
 from services.face_recognition.matcher import matcher
 
@@ -31,6 +32,8 @@ app.mount("/media", StaticFiles(directory=settings.UPLOAD_DIR), name="media")
 # Include routers
 app.include_router(database_router)
 app.include_router(face_recognition_router)
+
+app.include_router(save_to_db_router)
 
 
 @app.get("/")

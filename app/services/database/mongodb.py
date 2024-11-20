@@ -4,6 +4,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 
 from core.config import settings
+from schemas.data import DataRead
 
 
 class AsyncMongoDB:
@@ -44,6 +45,14 @@ class AsyncMongoDB:
     async def get_image_by_url(self, collection: str, url: str):
         face = await self.db[collection].find_one({"image_url": url})
         return face
+
+    async def save_to_db(self, document: DataRead):
+        result = await self.db.documents.insert_one(document)
+        return result.inserted_id
+
+    async def get_documents(self):
+        documents = self.db.documents.find()
+        return await documents.to_list(None)  # Загружаем все документы в список
 
 
 db = AsyncMongoDB()
