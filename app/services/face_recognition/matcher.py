@@ -1,32 +1,59 @@
 import asyncio
+import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import faiss
 import numpy as np
 
 from core.config import settings
 from services.database.mongodb import db
+from services.face_recognition.processor import logger
 
 
-class AsyncFaceMatcher:
+class AsyncFaceMatcherSingleton:
+    _instance: Optional["AsyncFaceMatcherSingleton"] = None
+    _initialized: bool = False
+    _lock = asyncio.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        self.dimension = 512
-        self.indexes: Dict[str, faiss.Index] = {}
-        self.id_maps: Dict[str, List[int]] = {}
-        self.executor = ThreadPoolExecutor(max_workers=settings.WORKER_POOL_SIZE)
-        self.lock = asyncio.Lock()
+        if not self._initialized:
+            self.dimension = 512
+            self.indexes: Dict[str, faiss.Index] = {}
+            self.id_maps: Dict[str, List[int]] = {}
+            self.executor = ThreadPoolExecutor(max_workers=settings.WORKER_POOL_SIZE)
+            self.lock = asyncio.Lock()
+            self._initialized = True
+
+    @classmethod
+    async def get_instance(cls) -> "AsyncFaceMatcherSingleton":
+        if cls._instance is None:
+            async with cls._lock:
+                if cls._instance is None:
+                    cls._instance = AsyncFaceMatcherSingleton()
+        return cls._instance
 
     async def initialize(self):
+        """Initialize FAISS indexes if not already initialized"""
+        if self.indexes:  # Skip if already initialized
+            return
+
         try:
             collections = await db.get_collections_names()
             initialization_tasks = [
                 self.create_index(collection) for collection in collections
             ]
             await asyncio.gather(*initialization_tasks)
-            print(f"Initialization tasks for collection {collections}")
+            print(
+                f"Worker {os.getpid()}: Initialized FAISS indexes for collections {collections}"
+            )
         except Exception as e:
-            print(f"Initialization error: {e}")
+            print(f"Worker {os.getpid()}: Initialization error: {e}")
             raise
 
     async def create_index(self, collection: str):
@@ -61,6 +88,7 @@ class AsyncFaceMatcher:
                 face_count += 1
 
             except Exception as e:
+                logger.error("Error creating face" + str(e))
                 continue
 
         async with self.lock:
@@ -219,9 +247,6 @@ class AsyncFaceMatcher:
             print(f"Search error: {e}")
             return 0.0, 0
 
-
-# Создание синглтона
-matcher = AsyncFaceMatcher()
 
 """
 # Удаление индекса коллекции

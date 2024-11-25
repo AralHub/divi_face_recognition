@@ -9,13 +9,16 @@ from api.routes.databases import router as database_router
 from api.routes.face_recognition import router as face_recognition_router
 from api.routes.save_to_db import router as save_to_db_router
 from core.config import settings
-from services.face_recognition.matcher import matcher
+from services.face_recognition.matcher import AsyncFaceMatcherSingleton
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Starting up application...")
+    # Получаем singleton инстанс и инициализируем его при старте приложения
+    matcher = await AsyncFaceMatcherSingleton.get_instance()
     await matcher.initialize()
+    print(f"Worker {os.getpid()}: FAISS matcher initialized")
+
     yield
     print("Shutting down application...")
 
@@ -42,4 +45,4 @@ def read_root():
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", reload=True, port=1234, host="localhost")
+    uvicorn.run("main:app", reload=True, port=1234, host="localhost", workers=4)

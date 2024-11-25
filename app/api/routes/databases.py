@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from core.config import settings
 from models.face import FaceInfo
 from services.database.mongodb import db
-from services.face_recognition.matcher import matcher
+from services.face_recognition.matcher import AsyncFaceMatcherSingleton
 
 router = APIRouter(tags=["database"])
 
@@ -22,7 +22,7 @@ async def delete_database(database: str):
     collections_names = await db.get_collections_names()
     if database not in collections_names:
         raise HTTPException(status_code=404, detail="database not found")
-
+    matcher = AsyncFaceMatcherSingleton()
     await matcher.delete_collection_index(database)
     await db.delete_collection(database)
     return {"message": f"Database {database} deleted successfully"}
@@ -30,6 +30,7 @@ async def delete_database(database: str):
 
 @router.post("/update_indexes")
 async def update_index(database: str):
+    matcher = AsyncFaceMatcherSingleton()
     await matcher.update_collection_index(database)
     return {"message": "Indexes updated successfully"}
 
@@ -37,7 +38,7 @@ async def update_index(database: str):
 @router.get("/get_stats{database}")
 async def get_stats(database: str):
     try:
-        # total_faces = await db.get_docs_from_collection(database)
+        matcher = AsyncFaceMatcherSingleton()
         stats = await matcher.get_index_stats(database)
         return stats
     except Exception as e:

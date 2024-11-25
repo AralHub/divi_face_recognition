@@ -3,12 +3,14 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Tuple
 from urllib.parse import urljoin
-
+import logging
 import cv2
 import numpy as np
 from insightface.app import FaceAnalysis
 
 from core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def compute_sim(feat1, feat2):
@@ -17,7 +19,9 @@ def compute_sim(feat1, feat2):
         feat2 = feat2.ravel()
         sim = np.dot(feat1, feat2) / (np.linalg.norm(feat1) * np.linalg.norm(feat2))
         return sim
-    except Exception:
+    except Exception as e:
+        logger.error("Failed to compute" + str(e))
+
         return None
 
 
