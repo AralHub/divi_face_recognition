@@ -27,7 +27,7 @@ def compute_sim(feat1, feat2):
 
 class AsyncFaceProcessor:
     def __init__(self):
-        self.analyzer = FaceAnalysis(name=settings.MODEL_NAME)
+        self.analyzer = FaceAnalysis(name=settings.MODEL_NAME, root=settings.MODEL_PATH)
         self.analyzer.prepare(ctx_id=0)
         self.executor = ThreadPoolExecutor(max_workers=settings.WORKER_POOL_SIZE)
 

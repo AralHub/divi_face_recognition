@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     MEDIA_URL: str
     COLLECTIONS: str
     MODEL_NAME: str = "buffalo_l"
+    MODEL_PATH: str = "./models"
     WORKER_POOL_SIZE: int = 1
 
     class Config:
