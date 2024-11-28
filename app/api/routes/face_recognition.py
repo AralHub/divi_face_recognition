@@ -6,16 +6,14 @@ from core.config import settings
 from services.database.mongodb import db
 from services.face_recognition.matcher import matcher
 from services.face_recognition.processor import processor
-from services.file_storage.async_storage import storage
 
 router = APIRouter(prefix="/face", tags=["face_recognition"])
 
 
 @router.post("/recognize", status_code=status.HTTP_200_OK)
-async def recognize_face(file: UploadFile = File(...), database: str = Form(...)):
+async def recognize_face(photo_key: str, database: str = Form(...)):
 
-    contents = await file.read()
-    face_data = await processor.process_image(contents)
+    face_data = await processor.process_image(photo_key)
     if face_data is None:
         raise HTTPException(status_code=400, detail="No face detected")
 
@@ -39,18 +37,14 @@ async def recognize_face(file: UploadFile = File(...), database: str = Form(...)
 
 @router.post("/add", status_code=status.HTTP_201_CREATED)
 async def add_face(
-    file: UploadFile = File(...), database: str = Form(...), person_id: int = Form(...)
+    photo_key: str, database: str = Form(...), person_id: int = Form(...)
 ):
-    contents = await file.read()
 
-    face_data = await processor.process_image(contents)
+    face_data = await processor.process_image(photo_key)
     if face_data is None:
         raise HTTPException(status_code=400, detail="No face detected")
 
     embedding, metadata = face_data
-
-    # Сохранение файла
-    filepath, image_url = await storage.save_file(contents, database, person_id)
 
     # Добавление в базу данных
     face_doc = {
@@ -58,7 +52,7 @@ async def add_face(
         "embedding": embedding.tolist(),
         "metadata": metadata,
         "image_path": filepath,
-        "image_url": image_url,  # Store the URL in the database
+        "image_url": image_url,
     }
 
     face_id = await db.add_face_to_collection(database, face_doc)

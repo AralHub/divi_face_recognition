@@ -5,6 +5,7 @@ import pickle
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Tuple
 from urllib.parse import urljoin
+import aiohttp
 
 import cv2
 import numpy as np
@@ -69,16 +70,29 @@ class AsyncFaceProcessor:
         await self.initialize_model()
 
     async def process_image(
-        self, image_data: bytes
+            self, image_url: str
     ) -> Optional[Tuple[np.ndarray, dict]]:
         # Ensure model is initialized
         if self.analyzer is None:
             await self.initialize_model()
 
+        # Download image from URL
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url) as response:
+                if response.status != 200:
+                    return None
+
+                # Read image data as bytes
+                image_data = await response.read()
+
         loop = asyncio.get_event_loop()
+
+        # Convert image bytes to numpy array
         image_array = await loop.run_in_executor(
             self.executor, lambda: np.frombuffer(image_data, np.uint8)
         )
+
+        # Decode image
         image = await loop.run_in_executor(
             self.executor, lambda: cv2.imdecode(image_array, cv2.IMREAD_COLOR)
         )
@@ -102,7 +116,6 @@ class AsyncFaceProcessor:
             "pose": face.pose.tolist(),
             "det_score": float(face.det_score),
         }
-
     async def background_image(
         self, snap_image: bytes, background_image: bytes, filename: str
     ):
