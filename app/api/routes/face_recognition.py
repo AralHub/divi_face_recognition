@@ -1,44 +1,46 @@
 from urllib.parse import urljoin
 
 from fastapi import APIRouter, File, UploadFile, Form, HTTPException, status
-
+from botocore.exceptions import ClientError
+from app.schemas.face_meta import ResponseRecognize, AddToDB
+from schemas.face_meta import Recognize
 from core.config import settings
+from services.database.db_template import template_db
 from services.database.mongodb import db
 from services.face_recognition.matcher import matcher
 from services.face_recognition.processor import processor
-
+from services.file_storage.async_s3_manager import s3_client
 router = APIRouter(prefix="/face", tags=["face_recognition"])
 
 
 @router.post("/recognize", status_code=status.HTTP_200_OK)
-async def recognize_face(photo_key: str, database: str = Form(...)):
+async def recognize_face(recognize: Recognize):
+    if face_data:= template_db.get_face_data(recognize.photo_key):
+        embedding, metadata = face_data.embedding, face_data.metadata
+    else:
+        face_data = await processor.process_image(recognize.photo_key)
+        if face_data is None:
+            raise HTTPException(status_code=400, detail="No face detected")
 
-    face_data = await processor.process_image(photo_key)
-    if face_data is None:
-        raise HTTPException(status_code=400, detail="No face detected")
+        embedding, metadata = face_data
 
-    embedding, metadata = face_data
+    if recognize.database not in await db.get_collections_names():
+        return ResponseRecognize(
+            person_id=0,
+            similarity=0,
+            metadata=metadata
+        )
 
-    if database not in await db.get_collections_names():
-        return {
-            "person_id": 0,
-            "similarity": 0,
-            "metadata": metadata,
-        }
+    score, person_id = await matcher.search(recognize.database, embedding)
 
-    score, person_id = await matcher.search(database, embedding)
-
-    return {
-        "person_id": person_id,
-        "similarity": float(score * 100),
-        "metadata": metadata,
-    }
-
+    return ResponseRecognize(
+        person_id=person_id,
+        similarity=score,
+        metadata=metadata
+    )
 
 @router.post("/add", status_code=status.HTTP_201_CREATED)
-async def add_face(
-    photo_key: str, database: str = Form(...), person_id: int = Form(...)
-):
+async def add_face(new_face: AddToDB):
 
     face_data = await processor.process_image(photo_key)
     if face_data is None:
