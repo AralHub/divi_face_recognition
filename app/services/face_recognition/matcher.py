@@ -1,48 +1,42 @@
 import asyncio
 import os
+import pickle
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
 import faiss
 import numpy as np
+import redis.asyncio as redis
 
 from core.config import settings
 from services.database.mongodb import db
 from services.face_recognition.processor import logger
 
 
-class AsyncFaceMatcherSingleton:
-    _instance: Optional["AsyncFaceMatcherSingleton"] = None
-    _initialized: bool = False
-    _lock = asyncio.Lock()
+class RedisFaceMatcher:
+    def __init__(self, redis_host="localhost", redis_port=6379, password="redis123"):
+        self.dimension = 512
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+        self.redis = redis.Redis(
+            host=redis_host,
+            port=redis_port,
+            password=password,
+            decode_responses=False,
+        )
 
-    def __init__(self):
-        if not self._initialized:
-            self.dimension = 512
-            self.indexes: Dict[str, faiss.Index] = {}
-            self.id_maps: Dict[str, List[int]] = {}
-            self.executor = ThreadPoolExecutor(max_workers=settings.WORKER_POOL_SIZE)
-            self.lock = asyncio.Lock()
-            self._initialized = True
+        self.executor = ThreadPoolExecutor(max_workers=settings.WORKER_POOL_SIZE)
+        self.lock = asyncio.Lock()
 
-    @classmethod
-    async def get_instance(cls) -> "AsyncFaceMatcherSingleton":
-        if cls._instance is None:
-            async with cls._lock:
-                if cls._instance is None:
-                    cls._instance = AsyncFaceMatcherSingleton()
-        return cls._instance
+    def _get_index_key(self, collection: str) -> str:
+        """Генерирует уникальный ключ для индекса в Redis"""
+        return f"faiss_index:{collection}"
+
+    def _get_id_map_key(self, collection: str) -> str:
+        """Генерирует уникальный ключ для маппинга ID в Redis"""
+        return f"faiss_id_map:{collection}"
 
     async def initialize(self):
-        """Initialize FAISS indexes if not already initialized"""
-        if self.indexes:  # Skip if already initialized
-            return
-
+        """Инициализация индексов для всех коллекций"""
         try:
             collections = await db.get_collections_names()
             initialization_tasks = [
@@ -57,16 +51,15 @@ class AsyncFaceMatcherSingleton:
             raise
 
     async def create_index(self, collection: str):
-        """Create a new index for the collection with logging and validation"""
-
-        if collection in self.indexes:
+        """Создание индекса для коллекции"""
+        # Проверяем существование индекса
+        index_exists = await self.redis.exists(self._get_index_key(collection))
+        if index_exists:
             return
 
+        # Создаем временный индекс
         temp_index = faiss.IndexFlatIP(self.dimension)
         temp_id_map = []
-
-        # Счетчик для отладки
-        face_count = 0
 
         async for face in db.get_docs_from_collection(collection):
             try:
@@ -85,154 +78,123 @@ class AsyncFaceMatcherSingleton:
                 faiss.normalize_L2(vectors)
                 temp_index.add(vectors)
                 temp_id_map.append(person_id)
-                face_count += 1
 
             except Exception as e:
-                logger.error("Error creating face" + str(e))
+                logger.error(f"Error creating face: {e}")
                 continue
 
+        # Сохраняем индекс и маппинг в Redis
         async with self.lock:
-            # Проверяем, что индексы соответствуют друг другу
-            if temp_index.ntotal != len(temp_id_map):
-                return
+            if temp_index.ntotal == len(temp_id_map):
+                # Сериализуем индекс
+                index_bytes = pickle.dumps(temp_index)
+                await self.redis.set(self._get_index_key(collection), index_bytes)
 
-            self.indexes[collection] = temp_index
-            self.id_maps[collection] = temp_id_map
+                # Сериализуем маппинг ID
+                id_map_bytes = pickle.dumps(temp_id_map)
+                await self.redis.set(self._get_id_map_key(collection), id_map_bytes)
 
     async def delete_collection_index(self, collection: str):
-        """Delete index and mapping for the specified collection with validation"""
-
+        """Удаление индекса коллекции"""
         async with self.lock:
-            if collection in self.indexes:
-                # Очищаем память явно
-                self.indexes[collection].reset()
-                del self.indexes[collection]
-                del self.id_maps[collection]
+            await self.redis.delete(self._get_index_key(collection))
+            await self.redis.delete(self._get_id_map_key(collection))
 
     async def update_collection_index(self, collection: str):
-        """Full index update for collection with validation"""
+        """Полное обновление индекса коллекции"""
+        # Сначала удаляем существующий индекс
+        await self.delete_collection_index(collection)
 
-        # Сохраняем старые данные временно
-        old_index = self.indexes.get(collection)
-        old_map = self.id_maps.get(collection)
-
-        try:
-            await self.delete_collection_index(collection)
-            await self.create_index(collection)
-
-            # Проверяем, что обновление прошло успешно
-            if collection not in self.indexes:
-                raise Exception("Failed to create new index")
-
-        except Exception as e:
-            # Восстанавливаем старые данные в случае ошибки
-            if old_index is not None and old_map is not None:
-                self.indexes[collection] = old_index
-                self.id_maps[collection] = old_map
-            raise
+        # Создаем новый
+        await self.create_index(collection)
 
     async def get_index_stats(self, collection: str) -> Dict:
-        """Get current index statistics for debugging"""
-        if collection not in self.indexes:
+        """Получение статистики индекса"""
+        index_key = self._get_index_key(collection)
+        id_map_key = self._get_id_map_key(collection)
+
+        # Проверяем существование индекса
+        if not await self.redis.exists(index_key):
             return {"error": "Index not found"}
 
+        # Загружаем индекс
+        index_bytes = await self.redis.get(index_key)
+        id_map_bytes = await self.redis.get(id_map_key)
+
+        index = pickle.loads(index_bytes)
+        id_map = pickle.loads(id_map_bytes)
+
         return {
-            "total_vectors": self.indexes[collection].ntotal,
-            "id_map_length": len(self.id_maps[collection]),
+            "total_vectors": index.ntotal,
+            "id_map_length": len(id_map),
             "dimension": self.dimension,
         }
 
-    async def partial_update_index(self, collection: str, person_ids: List[int]):
-        """Частичное обновление индекса только для указанных person_ids"""
-        if collection not in self.indexes:
-            await self.create_index(collection)
-            return
-
-        temp_index = faiss.IndexFlatIP(self.dimension)
-        temp_id_map = []
-
-        # Получаем текущие данные
-        current_faces = []
-        async for face in db.get_docs_from_collection(collection):
-            if face["person_id"] not in person_ids:
-                # Сохраняем существующие лица, не затронутые обновлением
-                vectors = np.array([face["embedding"]]).astype("float32")
-                faiss.normalize_L2(vectors)
-                current_faces.append((vectors, face["person_id"]))
-
-        # Получаем обновленные данные
-        async for face in db.get_docs_from_collection(collection):
-            if face["person_id"] in person_ids:
-                vectors = np.array([face["embedding"]]).astype("float32")
-                faiss.normalize_L2(vectors)
-                current_faces.append((vectors, face["person_id"]))
-
-        # Создаем новый индекс
-        for vectors, person_id in current_faces:
-            temp_index.add(vectors)
-            temp_id_map.append(person_id)
-
-        async with self.lock:
-            self.indexes[collection] = temp_index
-            self.id_maps[collection] = temp_id_map
-
-    async def delete_face(self, collection: str, person_id: int):
-        """Удаляет конкретное лицо из индекса"""
-        if collection not in self.indexes:
-            return
-
-        temp_index = faiss.IndexFlatIP(self.dimension)
-        temp_id_map = []
-
-        # Получаем все лица кроме удаляемого
-        async for face in db.get_docs_from_collection(collection):
-            if face["person_id"] != person_id:
-                vectors = np.array([face["embedding"]]).astype("float32")
-                faiss.normalize_L2(vectors)
-                temp_index.add(vectors)
-                temp_id_map.append(face["person_id"])
-
-        async with self.lock:
-            self.indexes[collection] = temp_index
-            self.id_maps[collection] = temp_id_map
-
     async def add_face(self, collection: str, embedding: np.ndarray, person_id: int):
-        """Добавляет новое лицо в индекс"""
-        if collection not in self.indexes:
-            await self.create_index(collection)
+        """Добавление нового лица в индекс"""
+        # Если индекса нет, создаем
+        index_key = self._get_index_key(collection)
+        id_map_key = self._get_id_map_key(collection)
 
-        vectors = np.array([embedding]).astype("float32")
-        faiss.normalize_L2(vectors)
+        if not await self.redis.exists(index_key):
+            await self.create_index(collection)
 
         async with self.lock:
             try:
-                current_index = self.indexes[collection]
-                current_id_map = self.id_maps[collection]
+                # Загружаем текущий индекс и маппинг
+                index_bytes = await self.redis.get(index_key)
+                id_map_bytes = await self.redis.get(id_map_key)
 
+                current_index = pickle.loads(index_bytes)
+                current_id_map = pickle.loads(id_map_bytes)
+
+                # Подготавливаем вектор
+                vectors = np.array([embedding]).astype("float32")
+                faiss.normalize_L2(vectors)
+
+                # Добавляем в индекс
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(
                     self.executor, lambda: current_index.add(vectors)
                 )
 
+                # Обновляем маппинг
                 current_id_map.append(person_id)
 
+                # Сохраняем обратно в Redis
+                updated_index_bytes = pickle.dumps(current_index)
+                updated_id_map_bytes = pickle.dumps(current_id_map)
+
+                await self.redis.set(index_key, updated_index_bytes)
+                await self.redis.set(id_map_key, updated_id_map_bytes)
+
             except Exception as e:
-                print(f"Error adding face: {e}")
+                logger.error(f"Error adding face: {e}")
                 raise
 
     async def search(self, collection: str, embedding: np.ndarray) -> Tuple[float, int]:
-        """Ищет наиболее похожее лицо в коллекции"""
-        if collection not in self.indexes:
+        """Поиск наиболее похожего лица"""
+        index_key = self._get_index_key(collection)
+        id_map_key = self._get_id_map_key(collection)
+
+        # Проверяем существование индекса
+        if not await self.redis.exists(index_key):
             return 0.0, 0
 
         try:
+            # Подготавливаем запрос
             query = np.array([embedding]).astype("float32")
             faiss.normalize_L2(query)
 
+            # Загружаем индекс и маппинг
             async with self.lock:
-                current_index = self.indexes[collection]
-                current_id_map = self.id_maps[collection]
+                index_bytes = await self.redis.get(index_key)
+                id_map_bytes = await self.redis.get(id_map_key)
 
+                current_index = pickle.loads(index_bytes)
+                current_id_map = pickle.loads(id_map_bytes)
+
+                # Выполняем поиск
                 loop = asyncio.get_event_loop()
                 scores, indices = await loop.run_in_executor(
                     self.executor, lambda: current_index.search(query, 1)
@@ -244,20 +206,57 @@ class AsyncFaceMatcherSingleton:
                 return float(scores[0][0]), current_id_map[indices[0][0]]
 
         except Exception as e:
-            print(f"Search error: {e}")
+            logger.error(f"Search error: {e}")
             return 0.0, 0
 
+    async def partial_update_index(self, collection: str, person_ids: List[int]):
+        """Частичное обновление индекса"""
+        # Создаем новый индекс
+        temp_index = faiss.IndexFlatIP(self.dimension)
+        temp_id_map = []
 
-"""
-# Удаление индекса коллекции
-await matcher.delete_collection_index("collection_name")
+        # Получаем текущие данные
+        current_faces = []
+        async for face in db.get_docs_from_collection(collection):
+            if face["person_id"] not in person_ids or face["person_id"] in person_ids:
+                vectors = np.array([face["embedding"]]).astype("float32")
+                faiss.normalize_L2(vectors)
+                current_faces.append((vectors, face["person_id"]))
 
-# Полное обновление индекса
-await matcher.update_collection_index("collection_name")
+        # Создаем новый индекс
+        for vectors, person_id in current_faces:
+            temp_index.add(vectors)
+            temp_id_map.append(person_id)
 
-# Частичное обновление для конкретных person_ids
-await matcher.partial_update_index("collection_name", [1, 2, 3])
+        # Сохраняем в Redis
+        async with self.lock:
+            index_bytes = pickle.dumps(temp_index)
+            id_map_bytes = pickle.dumps(temp_id_map)
 
-# Удаление конкретного лица
-await matcher.delete_face("collection_name", person_id=1)
-"""
+            await self.redis.set(self._get_index_key(collection), index_bytes)
+            await self.redis.set(self._get_id_map_key(collection), id_map_bytes)
+
+    async def delete_face(self, collection: str, person_id: int):
+        """Удаление конкретного лица из индекса"""
+        # Создаем новый индекс
+        temp_index = faiss.IndexFlatIP(self.dimension)
+        temp_id_map = []
+
+        # Получаем все лица кроме удаляемого
+        async for face in db.get_docs_from_collection(collection):
+            if face["person_id"] != person_id:
+                vectors = np.array([face["embedding"]]).astype("float32")
+                faiss.normalize_L2(vectors)
+                temp_index.add(vectors)
+                temp_id_map.append(face["person_id"])
+
+        # Сохраняем в Redis
+        async with self.lock:
+            index_bytes = pickle.dumps(temp_index)
+            id_map_bytes = pickle.dumps(temp_id_map)
+
+            await self.redis.set(self._get_index_key(collection), index_bytes)
+            await self.redis.set(self._get_id_map_key(collection), id_map_bytes)
+
+
+matcher = RedisFaceMatcher()

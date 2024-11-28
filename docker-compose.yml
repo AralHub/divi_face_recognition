@@ -9,6 +9,7 @@ services:
       - app/.env
     networks:
       - mongodb_network
+      - redis_network
     deploy:
       resources:
         limits:
@@ -21,4 +22,5 @@ services:
 networks:
   mongodb_network:
     external: true
+
 

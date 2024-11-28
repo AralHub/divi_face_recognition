@@ -4,7 +4,7 @@ from fastapi import APIRouter, File, UploadFile, Form, HTTPException, status
 
 from core.config import settings
 from services.database.mongodb import db
-from services.face_recognition.matcher import AsyncFaceMatcherSingleton
+from services.face_recognition.matcher import matcher
 from services.face_recognition.processor import processor
 from services.file_storage.async_storage import storage
 
@@ -27,7 +27,6 @@ async def recognize_face(file: UploadFile = File(...), database: str = Form(...)
             "similarity": 0,
             "metadata": metadata,
         }
-    matcher = AsyncFaceMatcherSingleton()
 
     score, person_id = await matcher.search(database, embedding)
 
@@ -64,7 +63,6 @@ async def add_face(
 
     face_id = await db.add_face_to_collection(database, face_doc)
 
-    matcher = AsyncFaceMatcherSingleton()
     await matcher.add_face(database, embedding, person_id)
 
     return {
@@ -112,7 +110,6 @@ async def delete_person(database: str = Form(...), person_id: int = Form(...)):
     if not result:
         raise HTTPException(status_code=404, detail="Person not found")
 
-    matcher = AsyncFaceMatcherSingleton()
     await matcher.delete_face(database, person_id)
 
     return {"message": f"Person with ID {person_id} deleted successfully"}
@@ -129,7 +126,6 @@ async def delete_image(database: str = Form(...), image_url: str = Form()):
     result = await db.delete_image_by_url(database, image_url)
     if not result:
         raise HTTPException(status_code=404, detail="Image not found")
-    matcher = AsyncFaceMatcherSingleton()
 
     await matcher.update_collection_index(database)
     return {"message": f"Image with URL {image_url} deleted successfully"}
