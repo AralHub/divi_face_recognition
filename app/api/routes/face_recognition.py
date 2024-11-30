@@ -45,7 +45,7 @@ async def add_face(new_face: AddToDB) -> SaveToDB:
         metadata=metadata,
     )
 
-    await db.add_face_to_collection(new_face.database, face_doc)
+    await db.add_face_to_collection(new_face.database, face_doc.model_dump())
 
     await matcher.add_face(new_face.database, embedding, new_face.person_id)
 
