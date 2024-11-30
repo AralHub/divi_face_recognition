@@ -7,6 +7,8 @@ from botocore.exceptions import ClientError
 from typing import Optional, Dict
 from pydantic import BaseModel
 
+from core.exceptions import S3Error, FaceNotFoundError, ImageNoDecodeError
+
 # Настройка логирования
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -121,10 +123,11 @@ class S3Manager:
                 image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
                 if image is None:
                     logger.error(f"Не удалось декодировать изображение: {key}")
+                    raise ImageNoDecodeError
                 return image
         except Exception as e:
             logger.error(f"Ошибка загрузки изображения {key}: {e}")
-            return None
+            raise S3Error
 
 
 # Инициализация менеджера S3

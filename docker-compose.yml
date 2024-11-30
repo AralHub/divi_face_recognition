@@ -35,7 +35,7 @@ services:
     container_name: mongo
     image: mongo:latest
     environment:
-      - MONGO_LOGLEVEL=2
+      - MONGO_LOGLEVEL=1
     volumes:
       - mongo_db_data:/data/mongodb
     networks:

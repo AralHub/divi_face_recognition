@@ -12,7 +12,7 @@ from core.config import settings
 from core.exceptions import S3Error, FaceNotFoundError, ModelNotFoundError
 from schemas.face_meta import TemplateFaceData, FaceMetadata
 from services.database.db_template import template_db
-from services.file_storage.async_s3_manager import s3_manager
+from services.file_storage.async_s3_manager import s3_manager, S3Manager
 
 logger = logging.getLogger(__name__)
 
@@ -112,14 +112,11 @@ class AsyncFaceProcessor:
         else:
 
             snap_image = await s3_manager.download_image(snap_key)
-            if snap_image is None:
-                return None
-            # Распознавание лиц на основном изображении
+
             faces = await loop.run_in_executor(
                 self.executor, self.analyzer.get, snap_image
             )
             if not faces:
-                # await s3_client.delete_file(key=photo_key)
                 raise FaceNotFoundError
 
             face = max(
@@ -127,15 +124,11 @@ class AsyncFaceProcessor:
             )
         background_image = await s3_manager.download_image(background_key)
 
-        if background_image is None:
-            return None
-
-        # Распознавание лиц на фоновом изображении
         faces_back = await loop.run_in_executor(
             self.executor, self.analyzer.get, background_image
         )
         if not faces_back:
-            return None
+            raise FaceNotFoundError
 
         for data in faces_back:
             if compute_sim(data.embedding, np.array(face.embedding)) > 0.8:

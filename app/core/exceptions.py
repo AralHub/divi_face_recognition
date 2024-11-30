@@ -20,3 +20,5 @@ FaceNotFoundError = HTTPException(
 ModelNotFoundError = HTTPException(status_code=412, detail="model not found")
 
 InvalidDatabase = HTTPException(status_code=413, detail="Invalid Database")
+
+ImageNoDecodeError = HTTPException(status_code=414, detail="Error decoding image")
