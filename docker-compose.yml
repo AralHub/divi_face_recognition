@@ -8,6 +8,8 @@ services:
       - .env
     networks:
       - face_rec_networks
+    volumes:
+      - ${LOCAL_MODEL_PATH}:${MODEL_PATH}
     deploy:
       resources:
         limits:
@@ -34,12 +36,13 @@ services:
   mongo:
     container_name: mongo
     image: mongo:latest
-    environment:
-      - MONGO_LOGLEVEL=1
     volumes:
       - mongo_db_data:/data/mongodb
     networks:
       - face_rec_networks
+    command:
+      - '--logpath'
+      - '/var/log/mongodb/mongod.log'
 
 
 volumes:

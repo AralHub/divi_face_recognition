@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = os.environ.get("DATABASE_NAME")
     COLLECTIONS: str = os.environ.get("COLLECTIONS")
     MODEL_NAME: str = "buffalo_l"
-    MODEL_PATH: str = "./models"
+    MODEL_PATH: str = os.environ.get("MODEL_PATH")
     WORKER_POOL_SIZE: int = 1
     s3_config: S3Config = S3Config()  # Указание типа атрибута.
     redis_config: Redis = Redis()  # Указание типа атрибута.
