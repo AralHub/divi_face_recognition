@@ -5,13 +5,14 @@ from fastapi import FastAPI
 from api.routes.databases import router as database_router
 from api.routes.face_recognition import router as face_recognition_router
 from services.face_recognition.matcher import matcher
+from services.face_recognition.processor import processor
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Получаем singleton инстанс и инициализируем его при старте приложения
     await matcher.initialize()
-
+    await processor.initialize_model()
     yield
     print("Shutting down application...")
 
