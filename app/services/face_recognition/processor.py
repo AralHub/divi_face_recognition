@@ -3,7 +3,6 @@ import logging
 import pickle
 from concurrent.futures import ThreadPoolExecutor
 
-import aiohttp
 import cv2
 import numpy as np
 import redis.asyncio as redis
