@@ -14,7 +14,12 @@ from services.face_recognition.processor import logger
 
 
 class RedisFaceMatcher:
-    def __init__(self, redis_host="localhost", redis_port=6379, password="redis123"):
+    def __init__(
+        self,
+        redis_host=settings.redis_config.host,
+        redis_port=settings.redis_config.port,
+        password=settings.redis_config.password,
+    ):
         self.dimension = 512
 
         self.redis = redis.Redis(

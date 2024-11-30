@@ -23,7 +23,7 @@ class FaceEmbedding(BaseModel):
 class FaceInfo(BaseModel):
     face_id: str
     person_id: int
-    image_path: str
+    image_key: str
     metadata: FaceMeta
 
 

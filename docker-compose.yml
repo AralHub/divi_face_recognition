@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   app:
@@ -6,10 +5,9 @@ services:
       context: ./app
       dockerfile: Dockerfile
     env_file:
-      - app/.env
+      - .env
     networks:
-      - mongodb_network
-      - redis_network
+      - face_rec_networks
     deploy:
       resources:
         limits:
@@ -17,10 +15,36 @@ services:
           memory: 3000M
     ports:
       - "127.0.0.1:3333:8000"
+    depends_on:
+      - redis
+      - mongo
 
+  redis:
+    image: redis:7.0.11-alpine
+    container_name: redis_db
+    restart: always
+    command: redis-server --requirepass redis123
+    ports:
+      - "6379"
+    networks:
+      - face_rec_networks
+
+
+  mongo:
+    container_name: mongo
+    image: mongo:latest
+    volumes:
+      - mongo_db_data:/data/mongodb
+    networks:
+      - face_rec_networks
+
+
+volumes:
+  mongo_db_data:
 
 networks:
-  mongodb_network:
-    external: true
+  face_rec_networks:
+    driver: bridge
+
 
 

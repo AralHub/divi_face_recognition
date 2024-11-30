@@ -1,39 +1,41 @@
 import asyncio
 import logging
-import os
 import pickle
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, Tuple
-from urllib.parse import urljoin
-import aiohttp
 
+import aiohttp
 import cv2
 import numpy as np
 import redis.asyncio as redis
 from insightface.app import FaceAnalysis
 
 from core.config import settings
+from core.exceptions import S3Error, FaceNotFoundError, ModelNotFoundError
+from schemas.face_meta import TemplateFaceData, FaceMetadata
+from services.database.db_template import template_db
+from services.file_storage.async_s3_manager import s3_manager
 
 logger = logging.getLogger(__name__)
 
 
 class AsyncFaceProcessor:
     def __init__(
-        self, redis_host="localhost", redis_port=6379, redis_password="redis123"
+        self,
+        redis_host=settings.redis_config.host,
+        redis_port=settings.redis_config.port,
+        password=settings.redis_config.password,
     ):
         # Initialize Redis connection
         self.redis = redis.Redis(
             host=redis_host,
             port=redis_port,
-            password=redis_password,
+            password=password,
             decode_responses=False,
         )
 
         # Executor for CPU-bound tasks
-        self.executor = ThreadPoolExecutor(max_workers=settings.WORKER_POOL_SIZE)
-
-        # Lock for thread-safe operations
         self.lock = asyncio.Lock()
+        self.executor = ThreadPoolExecutor(max_workers=4)
 
         # Model-related attributes
         self.model_key = "face_recognition_model"
@@ -69,103 +71,81 @@ class AsyncFaceProcessor:
         """Reload the model from Redis or recreate it"""
         await self.initialize_model()
 
-    async def process_image(
-            self, image_url: str
-    ) -> Optional[Tuple[np.ndarray, dict]]:
-        # Ensure model is initialized
+    async def process_image(self, photo_key: str) -> TemplateFaceData:
         if self.analyzer is None:
             await self.initialize_model()
 
-        # Download image from URL
-        async with aiohttp.ClientSession() as session:
-            async with session.get(image_url) as response:
-                if response.status != 200:
-                    return None
-
-                # Read image data as bytes
-                image_data = await response.read()
-
+        image = await s3_manager.download_image(photo_key)
         loop = asyncio.get_event_loop()
 
-        # Convert image bytes to numpy array
-        image_array = await loop.run_in_executor(
-            self.executor, lambda: np.frombuffer(image_data, np.uint8)
-        )
-
-        # Decode image
-        image = await loop.run_in_executor(
-            self.executor, lambda: cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-        )
-
-        if image is None:
-            return None
-
-        # Use the model for face detection
         faces = await loop.run_in_executor(self.executor, self.analyzer.get, image)
         if not faces:
-            return None
+            await s3_manager.delete_file(key=photo_key)
+            raise FaceNotFoundError
 
-        # Select the largest face
         face = max(
             faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])
         )
+        face_data = TemplateFaceData(
+            key=photo_key,
+            embedding=face.embedding.tolist(),
+            metadata=FaceMetadata(
+                age=int(face.age),
+                gender="Male" if face.gender == 1 else "Female",
+                pose=face.pose.tolist(),
+                det_score=float(face.det_score),
+            ),
+        )
+        await template_db.add_face(new_face=face_data)
 
-        return face.embedding, {
-            "age": int(face.age),
-            "gender": "Male" if face.gender == 1 else "Female",
-            "pose": face.pose.tolist(),
-            "det_score": float(face.det_score),
-        }
-    async def background_image(
-        self, snap_image: bytes, background_image: bytes, filename: str
-    ):
+        return face_data
+
+    async def process_background_image(self, snap_key: str, background_key: str):
+        """Обработка фонового изображения с распознаванием лиц."""
+
         loop = asyncio.get_event_loop()
-        snap_image_array = await loop.run_in_executor(
-            self.executor, lambda: np.frombuffer(snap_image, np.uint8)
-        )
-        background_image_array = await loop.run_in_executor(
-            self.executor, lambda: np.frombuffer(background_image, np.uint8)
-        )
 
-        snap_image = await loop.run_in_executor(
-            self.executor, lambda: cv2.imdecode(snap_image_array, cv2.IMREAD_COLOR)
-        )
-        background_image = await loop.run_in_executor(
-            self.executor,
-            lambda: cv2.imdecode(background_image_array, cv2.IMREAD_COLOR),
-        )
+        if self.analyzer is None:
+            await self.initialize_model()
 
-        if background_image is None or snap_image is None:
+        if face := await template_db.get_face_data(snap_key):
+            await template_db.delete_face(snap_key)
+        else:
+
+            snap_image = await s3_manager.download_image(snap_key)
+            if snap_image is None:
+                return None
+            # Распознавание лиц на основном изображении
+            faces = await loop.run_in_executor(
+                self.executor, self.analyzer.get, snap_image
+            )
+            if not faces:
+                # await s3_client.delete_file(key=photo_key)
+                raise FaceNotFoundError
+
+            face = max(
+                faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])
+            )
+        background_image = await s3_manager.download_image(background_key)
+
+        if background_image is None:
             return None
 
-        faces = await loop.run_in_executor(self.executor, self.analyzer.get, snap_image)
-        if not faces:
-            return None
-
-        face = max(
-            faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])
-        )
-
+        # Распознавание лиц на фоновом изображении
         faces_back = await loop.run_in_executor(
             self.executor, self.analyzer.get, background_image
         )
-
-        rel_path = os.path.join("background_images/", filename)
-        filepath = os.path.join(settings.UPLOAD_DIR, rel_path)
-        url_path = rel_path.replace(os.path.sep, "/")
-        full_url = urljoin(f"{settings.MEDIA_URL}/", url_path)
-
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
         if not faces_back:
             return None
+
         for data in faces_back:
-            if compute_sim(data.embedding, face.embedding) > 0.8:
+            if compute_sim(data.embedding, np.array(face.embedding)) > 0.8:
                 x1, y1, x2, y2 = map(int, data.bbox)
                 cv2.rectangle(background_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-        cv2.imwrite(filepath, background_image)
-        return {"background_image_path": filepath, "background_image_url": full_url}
+        result_url = await s3_manager.upload_image(background_image, background_key)
+
+        return {"background_image_url": result_url}
 
 
 def compute_sim(feat1, feat2):

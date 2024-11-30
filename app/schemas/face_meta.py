@@ -5,6 +5,7 @@ class FaceMetadata(BaseModel):
     age: int
     gender: str
     pose: list[float]
+    det_score: float
 
 
 class FaceResponse(FaceMetadata):
@@ -18,14 +19,27 @@ class ResponseRecognize(BaseModel):
     similarity: float
     metadata: FaceMetadata
 
+
 class Recognize(BaseModel):
     photo_key: str
-    database:str
+    database: str
+
 
 class AddToDB(Recognize):
     person_id: int
 
+
 class TemplateFaceData(BaseModel):
     key: str
-    embedding: list
+    embedding: list[float]
     metadata: FaceMetadata
+
+
+class PersonDelete(BaseModel):
+    database: str
+    person_id: int
+
+
+class ImageDelete(BaseModel):
+    database: str
+    image_key: str

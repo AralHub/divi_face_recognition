@@ -38,12 +38,12 @@ class AsyncMongoDB:
         result = await self.db.drop_collection(collection)
         return True
 
-    async def delete_image_by_url(self, collection: str, url: str) -> bool:
-        result = await self.db[collection].delete_many({"image_url": url})
+    async def delete_image_by_key(self, collection: str, key: str) -> bool:
+        result = await self.db[collection].delete_one({"key": key})
         return result.deleted_count > 0
 
-    async def get_image_by_url(self, collection: str, url: str):
-        face = await self.db[collection].find_one({"image_url": url})
+    async def get_image_by_key(self, collection: str, key: str):
+        face = await self.db[collection].find_one({"key": key})
         return face
 
     async def save_to_db(self, document: DataRead):
