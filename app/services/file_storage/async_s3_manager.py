@@ -1,13 +1,13 @@
-import aioboto3
 import logging
-import asyncio
+from typing import Optional
+
+import aioboto3
 import cv2
 import numpy as np
 from botocore.exceptions import ClientError
-from typing import Optional, Dict
 from pydantic import BaseModel
 
-from core.exceptions import S3Error, FaceNotFoundError, ImageNoDecodeError
+from core.exceptions import S3Error, ImageNoDecodeError
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -40,24 +40,6 @@ class S3Manager:
             aws_secret_access_key=self.config.aws_secret_access_key,
             endpoint_url=self.endpoint_url,
         )
-
-    async def upload_file(
-        self, file_path: str, key: str, content_type: Optional[str] = None
-    ):
-        """Загрузить файл в S3."""
-        try:
-            async with await self._get_client() as s3_client:
-                extra_args = {"ContentType": content_type} if content_type else {}
-                await s3_client.upload_file(
-                    Filename=file_path,
-                    Bucket=self.bucket_name,
-                    Key=key,
-                    ExtraArgs=extra_args,
-                )
-                logger.info(f"Файл {file_path} загружен как {key}")
-        except ClientError as e:
-            logger.error(f"Ошибка при загрузке файла {file_path}: {e}")
-            raise
 
     async def download_file(self, key: str, download_path: str):
         """Скачать файл из S3."""
@@ -104,7 +86,10 @@ class S3Manager:
             _, buffer = cv2.imencode(f".{format}", image)
             async with await self._get_client() as s3_client:
                 await s3_client.put_object(
-                    Bucket=self.bucket_name, Key=key, Body=buffer.tobytes()
+                    Bucket=self.bucket_name,
+                    Key=key,
+                    Body=buffer.tobytes(),
+                    content_type="image/jpeg",
                 )
                 logger.info(f"Изображение сохранено как {key}")
                 return key

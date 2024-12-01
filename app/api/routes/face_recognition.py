@@ -83,7 +83,6 @@ async def delete_image(data: ImageDelete):
     image_data = await db.get_image_by_key(data.database, data.image_key)
     if image_data is None:
         raise HTTPException(status_code=404, detail="Image not found")
-    await s3_manager.delete_file(key=data.image_key)
     result = await db.delete_image_by_key(data.database, data.image_key)
     if not result:
         raise HTTPException(status_code=404, detail="Image not found")
