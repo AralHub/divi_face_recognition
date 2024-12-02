@@ -43,3 +43,8 @@ class PersonDelete(BaseModel):
 class ImageDelete(BaseModel):
     database: str
     image_key: str
+
+
+class BackgroundImage(BaseModel):
+    background_key: str
+    snap_key: str

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Form, HTTPException, status
 
 from core.exceptions import InvalidDatabase
 from schemas.db import SaveToDB
-from schemas.face_meta import Recognize, PersonDelete, ImageDelete
+from schemas.face_meta import Recognize, PersonDelete, ImageDelete, BackgroundImage
 from schemas.face_meta import ResponseRecognize, AddToDB
 from services.database.db_template import template_db
 from services.database.mongodb import db
@@ -53,10 +53,10 @@ async def add_face(new_face: AddToDB):
 
 
 @router.post("/get_background_image")
-async def get_background_image(background_image: str, snap_image: str):
+async def get_background_image(data: BackgroundImage):
 
     data = await processor.process_background_image(
-        snap_key=snap_image, background_key=background_image
+        snap_key=data.snap_key, background_key=data.background_key
     )
     return data
 
