@@ -9,7 +9,7 @@ stop:
 
 restart:
 	docker-compose down
-	docker-compose up -d
+	docker-compose up -d --build
 
 remove:
 	docker-compose down -v
