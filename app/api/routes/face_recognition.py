@@ -30,7 +30,7 @@ async def recognize_face(recognize: Recognize):
 
 
 @router.post("/add", status_code=status.HTTP_201_CREATED)
-async def add_face(new_face: AddToDB) -> SaveToDB:
+async def add_face(new_face: AddToDB):
     if face_data := await template_db.get_face_data(new_face.photo_key):
         embedding, metadata = face_data.embedding, face_data.metadata
     else:
@@ -49,7 +49,7 @@ async def add_face(new_face: AddToDB) -> SaveToDB:
 
     await matcher.add_face(new_face.database, embedding, new_face.person_id)
 
-    return face_doc
+    return face_doc.model_dump(exclude={"embedding"})
 
 
 @router.post("/get_background_image")
