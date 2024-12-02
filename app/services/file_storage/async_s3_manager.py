@@ -89,13 +89,13 @@ class S3Manager:
                     Bucket=self.bucket_name,
                     Key=key,
                     Body=buffer.tobytes(),
-                    content_type="image/jpeg",
+                    ContentType="image/jpeg",
                 )
                 logger.info(f"Изображение сохранено как {key}")
                 return key
         except Exception as e:
             logger.error(f"Ошибка при загрузке изображения: {e}")
-            return None
+            return S3Error
 
     async def download_image(self, key: str) -> Optional[np.ndarray]:
         """Скачать изображение из S3 и декодировать его."""
