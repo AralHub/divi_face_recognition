@@ -1,8 +1,7 @@
-from urllib.parse import urljoin
-
 from fastapi import APIRouter, HTTPException
 
 from models.face import FaceInfo
+from schemas.db import GetImages
 from services.database.mongodb import db
 from services.face_recognition.matcher import matcher
 
@@ -42,10 +41,10 @@ async def get_stats(database: str):
 
 
 @router.get("/get_faces")
-async def get_faces(database: str):
+async def get_faces(data: GetImages):
     results = []
     try:
-        async for doc in db.get_docs_from_collection(database):
+        async for doc in db.get_docs_from_collection(data.database):
             results.append(
                 FaceInfo(
                     face_id=str(doc["_id"]),
