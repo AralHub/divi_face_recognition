@@ -8,7 +8,3 @@ class SaveToDB(BaseModel):
     key: str
     embedding: list[float]
     metadata: FaceMetadata
-
-
-class GetImages(BaseModel):
-    database: str
