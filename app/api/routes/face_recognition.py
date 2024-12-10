@@ -66,7 +66,9 @@ async def delete_person(data: PersonDelete):
     if data.database not in await db.get_collections_names():
         raise InvalidDatabase
 
-    # Удаление из базы данных
+    images = await db.get_images_by_person(data.database, data.person_id)
+    for image in images:
+        await s3_manager.delete_file(key=image["key"])
     result = await db.delete_person(data.database, data.person_id)
     if not result:
         raise HTTPException(status_code=404, detail="Person not found")
@@ -84,6 +86,7 @@ async def delete_image(data: ImageDelete):
     if image_data is None:
         raise HTTPException(status_code=404, detail="Image not found")
     result = await db.delete_image_by_key(data.database, data.image_key)
+    await s3_manager.delete_file(key=data.image_key)
     if not result:
         raise HTTPException(status_code=404, detail="Image not found")
 

@@ -54,5 +54,9 @@ class AsyncMongoDB:
         documents = self.db.documents.find()
         return await documents.to_list(None)  # Загружаем все документы в список
 
+    async def get_images_by_person(self, collection: str, person_id: int):
+        images = self.db[collection].find({"person_id": person_id})
+        return await images.to_list(None)  # Загружаем все изображения в список
+
 
 db = AsyncMongoDB()
