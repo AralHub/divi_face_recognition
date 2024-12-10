@@ -50,7 +50,7 @@ async def get_faces(database: str):
                 FaceInfo(
                     face_id=str(doc["_id"]),
                     person_id=doc["person_id"],
-                    image_key=doc["image_key"],
+                    image_key=doc["key"],
                     metadata=doc.get("metadata"),
                 )
             )
