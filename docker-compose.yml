@@ -37,7 +37,7 @@ services:
     container_name: mongo
     image: mongo:latest
     volumes:
-      - mongo_db_data:/data/mongodb
+      - mongo_db_data:/data/db
     networks:
       - face_rec_networks
     command:
