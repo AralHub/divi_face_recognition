@@ -1,8 +1,7 @@
 import asyncio
-import os
 import pickle
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 import faiss
 import numpy as np
@@ -96,6 +95,59 @@ class RedisFaceMatcher:
                 id_map_bytes = pickle.dumps(temp_id_map)
                 await self.redis.set(self._get_index_key(collection), index_bytes)
                 await self.redis.set(self._get_id_map_key(collection), id_map_bytes)
+
+    async def update_collection_index(self, collection: str):
+        """Полное обновление индекса коллекции"""
+        # Сначала удаляем существующий индекс
+        await self.delete_collection_index(collection)
+        # Создаем новый
+        await self.create_index(collection)
+
+    async def get_index_stats(self, collection: str) -> Dict:
+        """Получение статистики индекса"""
+        index_key = self._get_index_key(collection)
+        id_map_key = self._get_id_map_key(collection)
+        # Проверяем существование индекса
+        if not await self.redis.exists(index_key):
+            return {"error": "Index not found"}
+        # Загружаем индекс
+        index_bytes = await self.redis.get(index_key)
+        id_map_bytes = await self.redis.get(id_map_key)
+        index = pickle.loads(index_bytes)
+        id_map = pickle.loads(id_map_bytes)
+        return {
+            "total_vectors": index.ntotal,
+            "id_map_length": len(id_map),
+            "dimension": self.dimension,
+        }
+
+    async def search(self, collection: str, embedding: np.ndarray) -> Tuple[float, int]:
+        """Поиск наиболее похожего лица"""
+        index_key = self._get_index_key(collection)
+        id_map_key = self._get_id_map_key(collection)
+        # Проверяем существование индекса
+        if not await self.redis.exists(index_key):
+            return 0.0, 0
+        try:
+            # Подготавливаем запрос
+            query = np.array([embedding]).astype("float32")
+            faiss.normalize_L2(query)
+            # Загружаем индекс и маппинг
+            index_bytes = await self.redis.get(index_key)
+            id_map_bytes = await self.redis.get(id_map_key)
+            current_index = pickle.loads(index_bytes)
+            current_id_map = pickle.loads(id_map_bytes)
+            # Выполняем поиск
+            loop = asyncio.get_event_loop()
+            scores, indices = await loop.run_in_executor(
+                self.executor, lambda: current_index.search(query, 1)
+            )
+            if len(indices[0]) == 0:
+                return 0.0, 0
+            return float(scores[0][0]), current_id_map[indices[0][0]]
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            return 0.0, 0
 
     async def delete_collection_index(self, collection: str):
         """Удаление индекса коллекции"""
