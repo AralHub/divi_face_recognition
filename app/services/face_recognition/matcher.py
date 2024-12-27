@@ -157,16 +157,9 @@ class RedisFaceMatcher:
                 vectors = np.array([embedding]).astype("float32")
                 faiss.normalize_L2(vectors)
 
-                # Добавляем в индекс
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(
-                    self.executor, lambda: current_index.add(vectors)
-                )
-
-                # Обновляем маппинг
+                current_index.add(vectors)
                 current_id_map.append(person_id)
 
-                # Сохраняем обратно в Redis
                 updated_index_bytes = pickle.dumps(current_index)
                 updated_id_map_bytes = pickle.dumps(current_id_map)
 
