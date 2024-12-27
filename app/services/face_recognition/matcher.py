@@ -60,8 +60,8 @@ class RedisFaceMatcher:
     async def create_index(self, collection: str):
         """Создание индекса для коллекции"""
         lock_key = self._get_lock_key(collection)
-
-        async with self.lock_manager.lock(lock_key):
+        lock = await self.lock_manager.lock(lock_key)
+        async with lock:
             # Проверяем существование индекса
             index_exists = await self.redis.exists(self._get_index_key(collection))
             if index_exists:
@@ -161,7 +161,8 @@ class RedisFaceMatcher:
         """Добавление нового лица в индекс"""
         lock_key = self._get_lock_key(collection)
 
-        async with self.lock_manager.lock(lock_key):
+        lock = await self.lock_manager.lock(lock_key)
+        async with lock:
             index_key = self._get_index_key(collection)
             id_map_key = self._get_id_map_key(collection)
 
@@ -195,7 +196,8 @@ class RedisFaceMatcher:
         """Удаление конкретного лица из индекса"""
         lock_key = self._get_lock_key(collection)
 
-        async with self.lock_manager.lock(lock_key):
+        lock = await self.lock_manager.lock(lock_key)
+        async with lock:
             temp_index = faiss.IndexFlatIP(self.dimension)
             temp_id_map = []
 
