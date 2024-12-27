@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,9 +11,9 @@ from services.face_recognition.processor import processor
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Получаем singleton инстанс и инициализируем его при старте приложения
-    await matcher.initialize()
-    await processor.initialize_model()
+    if os.getenv("RUN_MAIN") == "true":
+        await matcher.initialize()
+        await processor.initialize_model()
     yield
     print("Shutting down application...")
 

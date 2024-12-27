@@ -19,8 +19,9 @@ python-multipart = "^0.0.17"
 black = "^24.10.0"
 gunicorn = "^23.0.0"
 redis = "^5.2.0"
-asyncio-redis = "^0.16.0"
 aioboto3 = "^13.2.0"
+aioredlock = "^0.7.3"
+setuptools = "^75.6.0"
 
 
 [build-system]
