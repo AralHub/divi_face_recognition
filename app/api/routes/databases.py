@@ -21,15 +21,8 @@ async def delete_database(database: str):
     collections_names = await db.get_collections_names()
     if database not in collections_names:
         raise HTTPException(status_code=404, detail="database not found")
-    await matcher.delete_collection_index(database)
     await db.delete_collection(database)
     return {"message": f"Database {database} deleted successfully"}
-
-
-@router.post("/update_indexes")
-async def update_index(database: str):
-    await matcher.update_collection_index(database)
-    return {"message": "Indexes updated successfully"}
 
 
 @router.get("/get_stats{database}")
@@ -54,6 +47,7 @@ async def get_faces(database: str):
                     metadata=doc.get("metadata"),
                 )
             )
+
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting faces: {str(e)}")
