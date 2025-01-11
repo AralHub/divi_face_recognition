@@ -75,7 +75,6 @@ class RedisFaceMatcher:
         # Проверяем существование индекса без блокировки
         if await self.redis.exists(self._get_index_key(collection)):
             return
-
         # Пытаемся получить блокировку
         if not await self.acquire_lock(lock_key):
             logger.warning(f"Could not acquire lock for collection {collection}")
@@ -155,8 +154,6 @@ class RedisFaceMatcher:
 
     async def get_index_stats(self, collection: str) -> Dict:
         """Получение статистики индекса"""
-        index_key = self._get_index_key(collection)
-        id_map_key = self._get_id_map_key(collection)
         # Проверяем существование индекса
         if not await self.redis.exists(index_key):
             return {"error": "Index not found"}
@@ -174,6 +171,10 @@ class RedisFaceMatcher:
     async def add_face(self, collection: str, embedding: np.ndarray, person_id: int):
         """Добавление лица с распределенной блокировкой"""
         lock_key = self._get_lock_key(collection)
+
+        if not await self.redis.exists(lock_key):
+            await self.create_index(collection)
+            return
 
         if not await self.acquire_lock(lock_key):
             raise Exception(f"Could not acquire lock for collection {collection}")
