@@ -175,7 +175,7 @@ class RedisFaceMatcher:
         """Добавление лица с распределенной блокировкой"""
         lock_key = self._get_lock_key(collection)
 
-        if not await self.redis.exists(lock_key):
+        if not await self.redis.exists(self._get_index_key(collection)):
             await self.create_index(collection)
             return
 
