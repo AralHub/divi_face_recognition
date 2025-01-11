@@ -154,6 +154,9 @@ class RedisFaceMatcher:
 
     async def get_index_stats(self, collection: str) -> Dict:
         """Получение статистики индекса"""
+        index_key = self._get_index_key(collection)
+        id_map_key = self._get_id_map_key(collection)
+
         # Проверяем существование индекса
         if not await self.redis.exists(index_key):
             return {"error": "Index not found"}
