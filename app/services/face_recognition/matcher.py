@@ -215,5 +215,57 @@ class RedisFaceMatcher:
         finally:
             await self.release_lock(lock_key)
 
+    async def delete_face(self, collection: str, person_id: int):
+        """Удаление лица из индекса по person_id с распределенной блокировкой"""
+        lock_key = self._get_lock_key(collection)
+
+        if not await self.redis.exists(self._get_index_key(collection)):
+            return  # Индекс отсутствует, ничего удалять
+
+        if not await self.acquire_lock(lock_key):
+            raise Exception(f"Could not acquire lock for collection {collection}")
+
+        try:
+            # Получаем индекс и id_map
+            async with self.redis.pipeline() as pipe:
+                pipe.get(self._get_index_key(collection))
+                pipe.get(self._get_id_map_key(collection))
+                index_bytes, id_map_bytes = await pipe.execute()
+
+            if not index_bytes or not id_map_bytes:
+                return
+
+            current_index = pickle.loads(index_bytes)
+            current_id_map = pickle.loads(id_map_bytes)
+
+            if person_id not in current_id_map:
+                return  # Идентификатор отсутствует
+
+            # Получаем индекс удаляемого элемента
+            idx_to_remove = current_id_map.index(person_id)
+
+            # Удаляем вектора и обновляем id_map
+            new_index = faiss.IndexFlatIP(self.dimension)
+            new_id_map = []
+
+            for i in range(current_index.ntotal):
+                if i != idx_to_remove:
+                    vector = np.array([current_index.reconstruct(i)])
+                    new_index.add(vector)
+                    new_id_map.append(current_id_map[i])
+
+            # Сохраняем обновленные данные
+            async with self.redis.pipeline() as pipe:
+                pipe.set(self._get_index_key(collection), pickle.dumps(new_index))
+                pipe.set(self._get_id_map_key(collection), pickle.dumps(new_id_map))
+                await pipe.execute()
+
+        except Exception as e:
+            logger.error(f"Error deleting face: {e}")
+            raise
+
+        finally:
+            await self.release_lock(lock_key)
+
 
 matcher = RedisFaceMatcher()
