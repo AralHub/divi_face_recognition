@@ -1,9 +1,17 @@
-from fastapi import APIRouter, Form, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
+from typing import Tuple, Dict, Any
+import asyncio
 
 from core.exceptions import InvalidDatabase
 from schemas.db import SaveToDB
-from schemas.face_meta import Recognize, PersonDelete, ImageDelete, BackgroundImage
-from schemas.face_meta import ResponseRecognize, AddToDB
+from schemas.face_meta import (
+    Recognize,
+    PersonDelete,
+    ImageDelete,
+    BackgroundImage,
+    ResponseRecognize,
+    AddToDB,
+)
 from services.database.db_template import template_db
 from services.database.mongodb import db
 from services.face_recognition.matcher import matcher
@@ -13,31 +21,40 @@ from services.file_storage.async_s3_manager import s3_manager
 router = APIRouter(prefix="/face", tags=["face_recognition"])
 
 
-@router.post("/recognize", status_code=status.HTTP_200_OK)
-async def recognize_face(recognize: Recognize):
-    if face_data := await template_db.get_face_data(recognize.photo_key):
-        embedding, metadata = face_data.embedding, face_data.metadata
-    else:
-        face_data = await processor.process_image(recognize.photo_key)
-        embedding, metadata = face_data.embedding, face_data.metadata
+async def get_face_data(photo_key: str) -> Tuple[list, Dict[str, Any]]:
+    """Получение данных лица из кэша или обработка нового изображения."""
+    if face_data := await template_db.get_face_data(photo_key):
+        return face_data.embedding, face_data.metadata
 
-    if recognize.database not in await db.get_collections_names():
+    face_data = await processor.process_image(photo_key)
+    return face_data.embedding, face_data.metadata
+
+
+async def validate_database(database: str) -> None:
+    """Проверка существования базы данных."""
+    if database not in await db.get_collections_names():
+        raise InvalidDatabase
+
+
+@router.post("/recognize", status_code=status.HTTP_200_OK)
+async def recognize_face(recognize: Recognize) -> ResponseRecognize:
+    embedding, metadata = await get_face_data(recognize.photo_key)
+
+    try:
+        await validate_database(recognize.database)
+    except InvalidDatabase:
         return ResponseRecognize(person_id=0, similarity=0, metadata=metadata)
 
     score, person_id = await matcher.search(recognize.database, embedding)
-
     return ResponseRecognize(person_id=person_id, similarity=score, metadata=metadata)
 
 
 @router.post("/add", status_code=status.HTTP_201_CREATED)
 async def add_face(new_face: AddToDB):
-    if face_data := await template_db.get_face_data(new_face.photo_key):
-        embedding, metadata = face_data.embedding, face_data.metadata
-    else:
-        face_data = await processor.process_image(new_face.photo_key)
-        embedding, metadata = face_data.embedding, face_data.metadata
+    embedding, metadata = await get_face_data(new_face.photo_key)
 
-    # Добавление в базу данных
+    await validate_database(new_face.database)
+
     face_doc = SaveToDB(
         person_id=new_face.person_id,
         key=new_face.photo_key,
@@ -46,7 +63,6 @@ async def add_face(new_face: AddToDB):
     )
 
     await db.add_face_to_collection(new_face.database, face_doc.model_dump())
-
     await matcher.add_face(new_face.database, embedding, new_face.person_id)
 
     return face_doc.model_dump(exclude={"embedding"})
@@ -54,25 +70,24 @@ async def add_face(new_face: AddToDB):
 
 @router.post("/get_background_image")
 async def get_background_image(data: BackgroundImage):
-
-    data = await processor.process_background_image(
+    return await processor.process_background_image(
         snap_key=data.snap_key, background_key=data.background_key
     )
-    return data
 
 
 @router.post("/delete_person", status_code=status.HTTP_200_OK)
 async def delete_person(data: PersonDelete):
-    if data.database not in await db.get_collections_names():
-        raise InvalidDatabase
+    await validate_database(data.database)
 
     images = await db.get_images_by_person(data.database, data.person_id)
-    for image in images:
-        await s3_manager.delete_file(key=image["key"])
-    result = await db.delete_person(data.database, data.person_id)
-    if not result:
+    if not images:
         raise HTTPException(status_code=404, detail="Person not found")
 
+    # Удаление файлов и записей параллельно
+    delete_tasks = [s3_manager.delete_file(image["key"]) for image in images]
+    await asyncio.gather(*delete_tasks)
+
+    await db.delete_person(data.database, data.person_id)
     await matcher.delete_face(data.database, data.person_id)
 
     return {"message": f"Person with ID {data.person_id} deleted successfully"}
@@ -80,15 +95,16 @@ async def delete_person(data: PersonDelete):
 
 @router.delete("/delete_image", status_code=status.HTTP_200_OK)
 async def delete_image(data: ImageDelete):
-    if data.database not in await db.get_collections_names():
-        raise InvalidDatabase
+    await validate_database(data.database)
+
     image_data = await db.get_image_by_key(data.database, data.image_key)
     if image_data is None:
         raise HTTPException(status_code=404, detail="Image not found")
-    result = await db.delete_image_by_key(data.database, data.image_key)
-    await s3_manager.delete_file(key=data.image_key)
-    if not result:
-        raise HTTPException(status_code=404, detail="Image not found")
+
+    await asyncio.gather(
+        db.delete_image_by_key(data.database, data.image_key),
+        s3_manager.delete_file(key=data.image_key),
+    )
 
     await matcher.update_collection_index(data.database)
     return {"message": f"Image with URL {data.image_key} deleted successfully"}
