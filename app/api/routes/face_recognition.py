@@ -53,7 +53,7 @@ async def recognize_face(recognize: Recognize) -> ResponseRecognize:
 async def add_face(new_face: AddToDB):
     embedding, metadata = await get_face_data(new_face.photo_key)
 
-    await validate_database(new_face.database)
+    #await validate_database(new_face.database)
 
     face_doc = SaveToDB(
         person_id=new_face.person_id,
