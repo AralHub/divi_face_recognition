@@ -42,7 +42,7 @@ async def recognize_face(recognize: Recognize) -> ResponseRecognize:
 
     try:
         await validate_database(recognize.database)
-    except InvalidDatabase:
+    except Exception:
         return ResponseRecognize(person_id=0, similarity=0, metadata=metadata)
 
     score, person_id = await matcher.search(recognize.database, embedding)
