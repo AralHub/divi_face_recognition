@@ -45,85 +45,87 @@ class RedisFaceMatcher:
 
     async def acquire_lock(self, lock_key: str) -> bool:
         """Получение распределенной блокировки"""
-        lock_value = os.getpid()  # используем PID процесса как идентификатор
+        lock_value = os.getpid()
         timeout = self.LOCK_TIMEOUT
         deadline = asyncio.get_event_loop().time() + timeout
 
         while asyncio.get_event_loop().time() < deadline:
-            # Пытаемся установить блокировку с помощью SETNX
             if await self.redis.set(lock_key, lock_value, ex=self.LOCK_EXPIRE, nx=True):
                 return True
             await asyncio.sleep(0.1)
         return False
 
-    async def initialize(self):
-        collections = await db.get_collections_names()
-        for collection in collections:
-            await self.create_index(collection)
-
     async def release_lock(self, lock_key: str):
         """Освобождение распределенной блокировки"""
-        # Проверяем, что блокировка принадлежит текущему процессу
         lock_value = await self.redis.get(lock_key)
         if lock_value and int(lock_value) == os.getpid():
             await self.redis.delete(lock_key)
 
+    async def initialize(self):
+        """Инициализация индексов для всех коллекций"""
+        collections = await db.get_collections_names()
+        for collection in collections:
+            await self.create_index(collection)
+
     async def create_index(self, collection: str):
-        """Создание индекса с распределенной блокировкой"""
+        """Создание индекса с усредненными эмбеддингами"""
         lock_key = self._get_lock_key(collection)
 
-        # Проверяем существование индекса без блокировки
         if await self.redis.exists(self._get_index_key(collection)):
             return
-        # Пытаемся получить блокировку
+
         if not await self.acquire_lock(lock_key):
             logger.warning(f"Could not acquire lock for collection {collection}")
             return
 
         try:
-            # Повторная проверка после получения блокировки
             if await self.redis.exists(self._get_index_key(collection)):
                 return
 
-            temp_index = faiss.IndexFlatIP(self.dimension)
-            temp_id_map = []
-
+            # Получаем все лица из коллекции
+            faces = []
             async for face in db.get_docs_from_collection(collection):
-                try:
-                    embedding = face.get("embedding")
-                    person_id = face.get("person_id")
+                embedding = face.get("embedding")
+                person_id = face.get("person_id")
+                if embedding is not None and person_id is not None:
+                    faces.append((person_id, np.array(embedding).astype("float32")))
 
-                    if embedding is None or person_id is None:
-                        continue
+            if not faces:
+                return
 
-                    vectors = np.array([embedding]).astype("float32")
-                    if vectors.shape[1] != self.dimension:
-                        continue
+            # Группируем эмбеддинги по person_id
+            embeddings_by_person = {}
+            for person_id, embedding in faces:
+                if person_id not in embeddings_by_person:
+                    embeddings_by_person[person_id] = []
+                embeddings_by_person[person_id].append(embedding)
 
-                    faiss.normalize_L2(vectors)
-                    temp_index.add(vectors)
-                    temp_id_map.append(person_id)
+            # Вычисляем средние эмбеддинги
+            average_embeddings = []
+            person_ids = []
+            for person_id, embs in embeddings_by_person.items():
+                avg_emb = np.mean(embs, axis=0)
+                average_embeddings.append(avg_emb)
+                person_ids.append(person_id)
 
-                except Exception as e:
-                    logger.error(f"Error processing face: {e}")
-                    continue
+            # Создаем FAISS индекс
+            temp_index = faiss.IndexFlatIP(self.dimension)
+            vectors = np.array(average_embeddings).astype("float32")
+            faiss.normalize_L2(vectors)
+            temp_index.add(vectors)
 
-            if temp_index.ntotal == len(temp_id_map):
-                # Атомарное сохранение обоих значений
-                async with self.redis.pipeline() as pipe:
-                    pipe.set(self._get_index_key(collection), pickle.dumps(temp_index))
-                    pipe.set(
-                        self._get_id_map_key(collection), pickle.dumps(temp_id_map)
-                    )
-                    await pipe.execute()
+            # Сохраняем индекс и id_map
+            async with self.redis.pipeline() as pipe:
+                pipe.set(self._get_index_key(collection), pickle.dumps(temp_index))
+                pipe.set(self._get_id_map_key(collection), pickle.dumps(person_ids))
+                await pipe.execute()
 
         finally:
             await self.release_lock(lock_key)
 
     async def search(self, collection: str, embedding: np.ndarray) -> Tuple[float, int]:
-        """Поиск без блокировки, так как чтение безопасно"""
+        """Поиск ближайшего усредненного эмбеддинга"""
         try:
-            # Атомарное получение данных
             async with self.redis.pipeline() as pipe:
                 pipe.get(self._get_index_key(collection))
                 pipe.get(self._get_id_map_key(collection))
@@ -152,27 +154,8 @@ class RedisFaceMatcher:
             logger.error(f"Search error: {e}")
             return 0.0, 0
 
-    async def get_index_stats(self, collection: str) -> Dict:
-        """Получение статистики индекса"""
-        index_key = self._get_index_key(collection)
-        id_map_key = self._get_id_map_key(collection)
-
-        # Проверяем существование индекса
-        if not await self.redis.exists(index_key):
-            return {"error": "Index not found"}
-        # Загружаем индекс
-        index_bytes = await self.redis.get(index_key)
-        id_map_bytes = await self.redis.get(id_map_key)
-        index = pickle.loads(index_bytes)
-        id_map = pickle.loads(id_map_bytes)
-        return {
-            "total_vectors": index.ntotal,
-            "id_map_length": len(id_map),
-            "dimension": self.dimension,
-        }
-
     async def add_face(self, collection: str, embedding: np.ndarray, person_id: int):
-        """Добавление лица с распределенной блокировкой"""
+        """Добавление нового эмбеддинга и обновление среднего"""
         lock_key = self._get_lock_key(collection)
 
         if not await self.redis.exists(self._get_index_key(collection)):
@@ -183,7 +166,6 @@ class RedisFaceMatcher:
             raise Exception(f"Could not acquire lock for collection {collection}")
 
         try:
-            # Атомарное получение данных
             async with self.redis.pipeline() as pipe:
                 pipe.get(self._get_index_key(collection))
                 pipe.get(self._get_id_map_key(collection))
@@ -196,13 +178,42 @@ class RedisFaceMatcher:
             current_index = pickle.loads(index_bytes)
             current_id_map = pickle.loads(id_map_bytes)
 
-            vectors = np.array([embedding]).astype("float32")
+            # Получаем все эмбеддинги для person_id из MongoDB
+            faces = []
+            async for face in db.get_docs_from_collection_by_person_id(
+                collection, person_id
+            ):
+                emb = face.get("embedding")
+                if emb is not None:
+                    faces.append(np.array(emb).astype("float32"))
+
+            # Добавляем новый эмбеддинг
+            new_emb = np.array(embedding).astype("float32")
+            faces.append(new_emb)
+
+            # Вычисляем новое среднее
+            avg_emb = np.mean(faces, axis=0)
+
+            # Обновляем или добавляем в индекс
+            vectors = np.array([avg_emb]).astype("float32")
             faiss.normalize_L2(vectors)
 
-            current_index.add(vectors)
-            current_id_map.append(person_id)
+            if person_id in current_id_map:
+                idx = current_id_map.index(person_id)
+                # FAISS не поддерживает прямое обновление, пересоздаем индекс
+                new_index = faiss.IndexFlatIP(self.dimension)
+                for i in range(current_index.ntotal):
+                    if i == idx:
+                        new_index.add(vectors)
+                    else:
+                        vec = current_index.reconstruct(i)
+                        new_index.add(np.array([vec]))
+                current_index = new_index
+            else:
+                current_index.add(vectors)
+                current_id_map.append(person_id)
 
-            # Атомарное сохранение обновленных данных
+            # Сохраняем обновленные данные
             async with self.redis.pipeline() as pipe:
                 pipe.set(self._get_index_key(collection), pickle.dumps(current_index))
                 pipe.set(self._get_id_map_key(collection), pickle.dumps(current_id_map))
@@ -215,18 +226,17 @@ class RedisFaceMatcher:
         finally:
             await self.release_lock(lock_key)
 
-    async def delete_face(self, collection: str, person_id: int):
-        """Удаление лица из индекса по person_id с распределенной блокировкой"""
+    async def delete_person(self, collection: str, person_id: int):
+        """Удаление person_id из индекса"""
         lock_key = self._get_lock_key(collection)
 
         if not await self.redis.exists(self._get_index_key(collection)):
-            return  # Индекс отсутствует, ничего удалять
+            return
 
         if not await self.acquire_lock(lock_key):
             raise Exception(f"Could not acquire lock for collection {collection}")
 
         try:
-            # Получаем индекс и id_map
             async with self.redis.pipeline() as pipe:
                 pipe.get(self._get_index_key(collection))
                 pipe.get(self._get_id_map_key(collection))
@@ -239,19 +249,17 @@ class RedisFaceMatcher:
             current_id_map = pickle.loads(id_map_bytes)
 
             if person_id not in current_id_map:
-                return  # Идентификатор отсутствует
+                return
 
-            # Получаем индекс удаляемого элемента
             idx_to_remove = current_id_map.index(person_id)
 
-            # Удаляем вектора и обновляем id_map
+            # Создаем новый индекс без удаляемого person_id
             new_index = faiss.IndexFlatIP(self.dimension)
             new_id_map = []
-
             for i in range(current_index.ntotal):
                 if i != idx_to_remove:
-                    vector = np.array([current_index.reconstruct(i)])
-                    new_index.add(vector)
+                    vector = current_index.reconstruct(i)
+                    new_index.add(np.array([vector]))
                     new_id_map.append(current_id_map[i])
 
             # Сохраняем обновленные данные
@@ -266,6 +274,117 @@ class RedisFaceMatcher:
 
         finally:
             await self.release_lock(lock_key)
+
+    async def delete_face(self, collection: str, person_id: int):
+        """Удаление конкретного лица и обновление среднего эмбеддинга"""
+        lock_key = self._get_lock_key(collection)
+
+        if not await self.redis.exists(self._get_index_key(collection)):
+            return
+
+        if not await self.acquire_lock(lock_key):
+            raise Exception(
+                f"Не удалось получить блокировку для коллекции {collection}"
+            )
+
+        try:
+
+            # Получаем все оставшиеся эмбеддинги для person_id
+            remaining_faces = []
+            async for face in db.get_docs_from_collection_by_person_id(
+                collection, person_id
+            ):
+                emb = face.get("embedding")
+                if emb is not None:
+                    remaining_faces.append(np.array(emb).astype("float32"))
+
+            # Получаем текущий индекс и id_map
+            async with self.redis.pipeline() as pipe:
+                pipe.get(self._get_index_key(collection))
+                pipe.get(self._get_id_map_key(collection))
+                index_bytes, id_map_bytes = await pipe.execute()
+
+            if not index_bytes or not id_map_bytes:
+                return
+
+            current_index = pickle.loads(index_bytes)
+            current_id_map = pickle.loads(id_map_bytes)
+
+            # Если у персоны не осталось лиц, удаляем из индекса
+            if not remaining_faces:
+                if person_id in current_id_map:
+                    idx_to_remove = current_id_map.index(person_id)
+
+                    # Создаем новый индекс без удаляемого person_id
+                    new_index = faiss.IndexFlatIP(self.dimension)
+                    new_id_map = []
+                    for i in range(current_index.ntotal):
+                        if i != idx_to_remove:
+                            vector = current_index.reconstruct(i)
+                            new_index.add(np.array([vector]))
+                            new_id_map.append(current_id_map[i])
+
+                    # Сохраняем обновленные данные
+                    async with self.redis.pipeline() as pipe:
+                        pipe.set(
+                            self._get_index_key(collection), pickle.dumps(new_index)
+                        )
+                        pipe.set(
+                            self._get_id_map_key(collection), pickle.dumps(new_id_map)
+                        )
+                        await pipe.execute()
+            else:
+                # Вычисляем новое среднее и обновляем индекс
+                avg_emb = np.mean(remaining_faces, axis=0)
+                vectors = np.array([avg_emb]).astype("float32")
+                faiss.normalize_L2(vectors)
+
+                if person_id in current_id_map:
+                    idx = current_id_map.index(person_id)
+                    # FAISS не поддерживает прямое обновление, пересоздаем индекс
+                    new_index = faiss.IndexFlatIP(self.dimension)
+                    for i in range(current_index.ntotal):
+                        if i == idx:
+                            new_index.add(vectors)
+                        else:
+                            vec = current_index.reconstruct(i)
+                            new_index.add(np.array([vec]))
+
+                    # Сохраняем обновленные данные
+                    async with self.redis.pipeline() as pipe:
+                        pipe.set(
+                            self._get_index_key(collection), pickle.dumps(new_index)
+                        )
+                        pipe.set(
+                            self._get_id_map_key(collection),
+                            pickle.dumps(current_id_map),
+                        )
+                        await pipe.execute()
+
+        except Exception as e:
+            logger.error(f"Ошибка при удалении лица: {e}")
+            raise
+
+        finally:
+            await self.release_lock(lock_key)
+
+    async def get_index_stats(self, collection: str) -> Dict:
+        """Получение статистики индекса"""
+        index_key = self._get_index_key(collection)
+        id_map_key = self._get_id_map_key(collection)
+
+        if not await self.redis.exists(index_key):
+            return {"error": "Index not found"}
+
+        index_bytes = await self.redis.get(index_key)
+        id_map_bytes = await self.redis.get(id_map_key)
+        index = pickle.loads(index_bytes)
+        id_map = pickle.loads(id_map_bytes)
+        return {
+            "total_persons": index.ntotal,  # Теперь это количество person_id
+            "id_map_length": len(id_map),
+            "dimension": self.dimension,
+        }
 
 
 matcher = RedisFaceMatcher()

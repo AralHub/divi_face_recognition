@@ -45,6 +45,3 @@ class ImageDelete(BaseModel):
     image_key: str
 
 
-class BackgroundImage(BaseModel):
-    background_key: str
-    snap_key: str

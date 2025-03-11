@@ -8,7 +8,6 @@ from schemas.face_meta import (
     Recognize,
     PersonDelete,
     ImageDelete,
-    BackgroundImage,
     ResponseRecognize,
     AddToDB,
 )
@@ -68,12 +67,6 @@ async def add_face(new_face: AddToDB):
     return face_doc.model_dump(exclude={"embedding"})
 
 
-@router.post("/get_background_image")
-async def get_background_image(data: BackgroundImage):
-    return await processor.process_background_image(
-        snap_key=data.snap_key, background_key=data.background_key
-    )
-
 
 @router.post("/delete_person", status_code=status.HTTP_200_OK)
 async def delete_person(data: PersonDelete):
@@ -88,7 +81,7 @@ async def delete_person(data: PersonDelete):
     await asyncio.gather(*delete_tasks)
 
     await db.delete_person(data.database, data.person_id)
-    await matcher.delete_face(data.database, data.person_id)
+    await matcher.delete_person(data.database, data.person_id)
 
     return {"message": f"Person with ID {data.person_id} deleted successfully"}
 
@@ -96,7 +89,6 @@ async def delete_person(data: PersonDelete):
 @router.delete("/delete_image", status_code=status.HTTP_200_OK)
 async def delete_image(data: ImageDelete):
     await validate_database(data.database)
-
     image_data = await db.get_image_by_key(data.database, data.image_key)
     if image_data is None:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -106,5 +98,5 @@ async def delete_image(data: ImageDelete):
         s3_manager.delete_file(key=data.image_key),
     )
 
-    await matcher.update_collection_index(data.database)
-    return {"message": f"Image with URL {data.image_key} deleted successfully"}
+    await matcher.delete_face(data.database, image_data["person_id"])
+    return {"message": f"Image with URL {data.image_key} deleted successfully "}

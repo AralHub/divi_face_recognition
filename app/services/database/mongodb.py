@@ -20,6 +20,10 @@ class AsyncMongoDB:
         async for doc in self.db[collection].find():
             yield doc
 
+    async def get_docs_from_collection_by_person_id(self, collection: str, person_id: int) -> AsyncIterator[dict]:
+        async for doc in self.db[collection].find({"person_id": person_id}):
+            yield doc
+
     async def add_face_to_collection(
         self, collection: str, face_data: dict
     ) -> ObjectId:

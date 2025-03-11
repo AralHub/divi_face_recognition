@@ -99,46 +99,6 @@ class AsyncFaceProcessor:
 
         return face_data
 
-    async def process_background_image(self, snap_key: str, background_key: str):
-        """Обработка фонового изображения с распознаванием лиц."""
-
-        loop = asyncio.get_event_loop()
-
-        if self.analyzer is None:
-            await self.initialize_model()
-
-        if face := await template_db.get_face_data(snap_key):
-            await template_db.delete_face(snap_key)
-        else:
-
-            snap_image = await s3_manager.download_image(snap_key)
-
-            faces = await loop.run_in_executor(
-                self.executor, self.analyzer.get, snap_image
-            )
-            if not faces:
-                raise FaceNotFoundError
-
-            face = max(
-                faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1])
-            )
-        background_image = await s3_manager.download_image(background_key)
-
-        faces_back = await loop.run_in_executor(
-            self.executor, self.analyzer.get, background_image
-        )
-        if not faces_back:
-            raise FaceNotFoundError
-
-        for data in faces_back:
-            if compute_sim(data.embedding, np.array(face.embedding)) > 0.8:
-                x1, y1, x2, y2 = map(int, data.bbox)
-                cv2.rectangle(background_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-        result_url = await s3_manager.upload_image(background_image, background_key)
-
-        return {"background_image_url": result_url}
-
 
 def compute_sim(feat1, feat2):
     try:
