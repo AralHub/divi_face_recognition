@@ -20,7 +20,9 @@ class AsyncMongoDB:
         async for doc in self.db[collection].find():
             yield doc
 
-    async def get_docs_from_collection_by_person_id(self, collection: str, person_id: int) -> AsyncIterator[dict]:
+    async def get_docs_from_collection_by_person_id(
+        self, collection: str, person_id: int
+    ) -> AsyncIterator[dict]:
         async for doc in self.db[collection].find({"person_id": person_id}):
             yield doc
 
@@ -61,6 +63,10 @@ class AsyncMongoDB:
     async def get_images_by_person(self, collection: str, person_id: int):
         images = self.db[collection].find({"person_id": person_id})
         return await images.to_list(None)  # Загружаем все изображения в список
+
+
+    async def count_documents(self, collection: str) -> int:
+        return await self.db[collection].count_documents({})
 
 
 db = AsyncMongoDB()

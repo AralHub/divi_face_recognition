@@ -45,3 +45,8 @@ class ImageDelete(BaseModel):
     image_key: str
 
 
+class MovePerson(BaseModel):
+    database: str
+    client_id: int
+    employee_id: int
+    new_database: str

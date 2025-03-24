@@ -36,18 +36,9 @@ async def get_stats(database: str):
 
 @router.get("/get_faces")
 async def get_faces(database: str):
-    results = []
     try:
-        async for doc in db.get_docs_from_collection(database):
-            results.append(
-                FaceInfo(
-                    face_id=str(doc["_id"]),
-                    person_id=doc["person_id"],
-                    image_key=doc["key"],
-                    metadata=doc.get("metadata"),
-                )
-            )
-
-        return results
+        # Получаем количество документов в коллекции
+        count = await db.count_documents(database)
+        return {"count": count}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting faces: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error counting faces: {str(e)}")
