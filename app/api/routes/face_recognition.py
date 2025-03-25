@@ -105,36 +105,36 @@ async def delete_image(data: ImageDelete):
 @router.post("/move_person", status_code=status.HTTP_200_OK)
 async def move_person(data: MovePerson):
     # Проверяем существование обеих коллекций
-    await validate_database(data.source_database)
-    await validate_database(data.target_database)
+    await validate_database(data.database)
+    await validate_database(data.new_database)
 
     # Получаем все изображения пользователя из исходной коллекции
-    images = await db.get_images_by_person(data.source_database, data.person_id)
+    images = await db.get_images_by_person(data.database, data.client_id)
     if not images:
         raise HTTPException(status_code=404, detail="Человек не найден в исходной базе")
 
     # Добавляем лица в целевую коллекцию и обновляем индекс
     for image in images:
         face_doc = SaveToDB(
-            person_id=data.person_id,
+            person_id=data.employee_id,
             key=image["key"],
             embedding=image["embedding"],
             metadata=image.get("metadata", {}),
         )
 
         # Добавляем в новую коллекцию
-        await db.add_face_to_collection(data.target_database, face_doc.model_dump())
+        await db.add_face_to_collection(data.new_database, face_doc.model_dump())
 
         # Обновляем FAISS индекс для целевой коллекции
-        await matcher.add_face(data.target_database, image["embedding"], data.person_id)
+        await matcher.add_face(data.new_database, image["embedding"], data.employee_id)
 
     # Удаляем из исходного индекса
-    await matcher.delete_person(data.source_database, data.person_id)
+    await matcher.delete_person(data.database, data.client_id)
 
     # Удаляем из исходной коллекции
-    await db.delete_person(data.source_database, data.person_id)
+    await db.delete_person(data.database, data.client_id)
 
     return {
-        "message": f"Человек с ID {data.person_id} успешно перемещен из {data.source_database} в {data.target_database}",
+        "message": f"Человек с ID {data.client_id} успешно перемещен из {data.database} в {data.new_database}",
         "moved_images": len(images),
     }
