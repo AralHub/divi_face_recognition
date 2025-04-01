@@ -36,6 +36,7 @@ services:
   mongo:
     container_name: mongo
     image: mongo:latest
+    restart: always
     volumes:
       - mongo_db_data:/data/db
     networks:
