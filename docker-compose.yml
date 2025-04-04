@@ -41,9 +41,7 @@ services:
       - mongo_db_data:/data/db
     networks:
       - face_rec_networks
-    command:
-      - '--logpath'
-      - '/var/log/mongodb/mongod.log'
+    command: ["mongod", "--logpath", "/dev/null", "--quiet"]
 
 
 volumes:
