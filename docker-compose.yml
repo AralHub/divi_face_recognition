@@ -40,7 +40,7 @@ services:
       - mongo_db_data:/data/db
     networks:
       - face_rec_networks
-    command: sh -c "rm -f /data/db/mongod.lock /data/db/WiredTiger.lock && mongod --bind_ip_all --quiet --logpath /dev/null --syslog"
+    command: sh -c "rm -f /data/db/mongod.lock /data/db/WiredTiger.lock && mongod --bind_ip_all --quiet --logpath /dev/null"
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
