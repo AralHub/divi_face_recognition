@@ -1,4 +1,3 @@
-
 services:
   app:
     build:
@@ -41,13 +40,17 @@ services:
       - mongo_db_data:/data/db
     networks:
       - face_rec_networks
-    command: ["mongod", "--quiet"]
-
+    command: mongod --bind_ip_all --quiet
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
   mongo_db_data:
   redis_data:
-
 
 networks:
   face_rec_networks:
