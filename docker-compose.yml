@@ -41,7 +41,7 @@ services:
       - mongo_db_data:/data/db
     networks:
       - face_rec_networks
-    command: ["mongod", "--logpath", "/dev/null", "--quiet"]
+    command: ["mongod", "--quiet"]
 
 
 volumes:
