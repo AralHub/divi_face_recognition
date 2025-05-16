@@ -1,10 +1,10 @@
-from pydantic import BaseModel
+from typing import Dict, List, Optional, Any
 
-from schemas.face_meta import FaceMetadata
+from pydantic import BaseModel
 
 
 class SaveToDB(BaseModel):
+
     person_id: int
-    key: str
-    embedding: list[float]
-    metadata: FaceMetadata
+    template_data: str  # base64 шаблон для 3DiVi
+

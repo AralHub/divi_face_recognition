@@ -13,12 +13,23 @@ class DatabaseError(Exception):
     pass
 
 
-S3Error = HTTPException(status_code=511, detail="S3 server error")
-FaceNotFoundError = HTTPException(
-    status_code=411, detail="no face is detected in the image"
-)
-ModelNotFoundError = HTTPException(status_code=412, detail="model not found")
+class CollectionNotFoundError(HTTPException):
+    status_code = 404
+    detail = "Collection not found"
+
+
+class FaceNotFoundError(HTTPException):
+    status_code = 411
+    detail = "no face is detected in the image"
+
+
+class ModelNotFoundError(Exception):
+    status_code = 412
+    detail = "model not found"
+
 
 InvalidDatabase = HTTPException(status_code=413, detail="Invalid Database")
 
-ImageNoDecodeError = HTTPException(status_code=414, detail="Error decoding image")
+class ImageNoDecodeError(HTTPException):
+    status_code = 414
+    detail = "Error decoding image"
