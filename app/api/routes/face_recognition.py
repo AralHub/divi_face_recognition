@@ -3,7 +3,7 @@ from typing import Dict, List, Any
 import json
 import time
 import logging
-from services.database.mongodb import db
+from services.database.localdb import db
 from services.face_recognition.divi_processor import processor
 from services.face_recognition.divi_matcher import matcher
 from schemas.face_meta import (
@@ -28,9 +28,9 @@ async def recognize_face(recognize: Recognize):
 
     # Проверка существования базы данных
     db_start = time.time()
-    collections = await db.get_collections_names()
-    if recognize.database not in collections:
-        raise HTTPException(status_code=404, detail="База данных не найдена")
+    # collections = await db.get_collections_names()
+    # if recognize.database not in collections:
+    #     raise HTTPException(status_code=404, detail="База данных не найдена")
     db_check_time = time.time() - db_start
     print(f"Проверка базы данных: {db_check_time:.4f} секунд")
 
